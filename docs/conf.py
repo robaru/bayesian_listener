@@ -96,7 +96,6 @@ intersphinx_mapping = {
     'numpy': ('https://numpy.org/doc/stable/', None),
     'scipy': ('https://docs.scipy.org/doc/scipy/', None),
     'matplotlib': ('https://matplotlib.org/stable/', None),
-    'pyfar': ('https://pyfar.readthedocs.io/en/stable/', None),
     }
 
 # -- Options for HTML output -------------------------------------------------
@@ -107,7 +106,7 @@ html_static_path = ['_static']
 html_css_files = ['css/custom.css']
 html_js_files = ['js/custom.js']
 #html_logo = ''
-html_title = "bayesian_listener"
+html_title = "bayesian listener"
 html_favicon = '_static/favicon.ico'
 
 # -- HTML theme options

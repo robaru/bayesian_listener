@@ -1,11 +1,3 @@
-
-html[data-theme="light"] {
-    --pst-color-primary: #126CB0; /* pyfar blue as primary color */
-}
-
-html[data-theme="dark"] {
-    --pst-color-primary: #126CB0; /* pyfar blue as primary color */
-}
 html {
     --pst-icon-external-link: "";
 }

@@ -1,17 +1,8 @@
 import pytest
-
-
-def test_import_bayesian_listener():
-    try:
-        import bayesian_listener           # noqa
-    except ImportError:
-        pytest.fail('import bayesian_listener failed')
-
-import pytest
 import numpy as np
 from pathlib import Path
 import urllib.request
-from bayesian_listener.bayesian_listener import BayesianListener
+from bayesian_listener import BayesianListener
 from bayesian_listener.coordinates import Coordinates
 
 

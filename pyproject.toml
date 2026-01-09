@@ -6,7 +6,10 @@ readme = "README.md"
 license = {file = "LICENSE"}
 requires-python = ">=3.9"
 authors = [
+    { name = "Roberto Barumerli", email = "r.barumerli@imperial.ac.uk" },
+    { name = "Fabian Brinkmann", email = "f.brinkmann@tu-berlin.de" },
     { name = "Anton Hoyer", email = "a.hoyer@tu-berlin.de" },
+    { name = "Emanuele Zanoni", email = "emanuele.zanoni@unipd.it" }
 ]
 keywords = [
     'auditory model',
@@ -30,6 +33,13 @@ dependencies = [
     'scipy',
     'matplotlib',
     'pyfar',
+    'sofar',
+    'numba',
+    'pandas',
+    'psutil',
+    'spharpy',
+    'spaudiopy',
+    'joblib'
 ]
 
 [project.optional-dependencies]

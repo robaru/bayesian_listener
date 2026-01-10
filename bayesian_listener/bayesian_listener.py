@@ -1,3 +1,6 @@
+"""
+The following describes the BayesianListner, which is the core auditory model.
+"""
 import sofar
 import numpy as np
 import matplotlib.pyplot as plt

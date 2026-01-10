@@ -1,3 +1,7 @@
+"""
+This module contains functions to spatially resample ITD, ILD and spectral
+cues.
+"""
 import numpy as np
 import spharpy as sy
 import spaudiopy

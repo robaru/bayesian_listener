@@ -260,7 +260,8 @@ class BayesianListener:
               repetitions = 50,
               seed = None,
               prior = 'horizontal'):
-        rng = np.random.default_rng(seed)
+        np.random.seed(seed)
+
 
         # prepare features
         # use original HRIR if no target is provided
@@ -332,7 +333,7 @@ class BayesianListener:
             L = np.linalg.cholesky(sigma)  # L @ L.T = sigma
             for t in range(target_num):
                 ts = np.tile(target_feat[t,:], [repetitions, 1])
-                xs = ts + rng.normal(size=ts.shape) @ L.T
+                xs = ts + np.random.normal(size=ts.shape) @ L.T
                 loglik = utils.multiple_logpdfs_vec_input_single_cov(
                     xs,template_feat, logdet, Us).squeeze()
                 logpost = loglik + np.log(prior)
@@ -350,7 +351,7 @@ class BayesianListener:
             for t in range(target_num):
                 # for ta in range(target_num):
                 # AWGN NOISE
-                x = rng.multivariate_normal(target_feat[t,:], sigma)
+                x = np.random.multivariate_normal(target_feat[t,:], sigma)
 
                 # COMPUTE POSTERIOR
                 # using vectorised solution

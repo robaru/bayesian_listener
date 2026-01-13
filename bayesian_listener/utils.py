@@ -250,7 +250,7 @@ def scatter_von_mises(dirs, sigma_m):
     return dirs_new
 
 def randvmf(kappa, mu, seed = None):
-    rng = np.random.default_rng(seed)
+    np.random.seed(seed)
 
 
     assert mu is not None
@@ -265,11 +265,11 @@ def randvmf(kappa, mu, seed = None):
     # Rubinstein 81, p.39, Fisher 87, p.59
     kappaS = np.sign(kappa)
     kappa = abs(kappa)
-    U = rng.rand()
+    U = np.random.rand()
     x = np.log(2. * U * np.sinh(kappa) + np.exp(-kappa)) / kappa
     x = kappaS * x
 
-    psi = 2. * np.pi * rng.rand()
+    psi = 2. * np.pi * np.random.rand()
     s_x = np.sqrt(1. - x**2.)
     y = np.array([np.cos(psi) * s_x, np.sin(psi) * s_x, x])
 

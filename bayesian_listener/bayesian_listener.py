@@ -1,5 +1,5 @@
 """
-The following describes the BayesianListner, which is the core auditory model.
+The following describes the BayesianListener, which is the core auditory model.
 """
 import sofar
 import numpy as np

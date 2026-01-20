@@ -9,7 +9,7 @@ authors = [
     { name = "Roberto Barumerli", email = "r.barumerli@imperial.ac.uk" },
     { name = "Fabian Brinkmann", email = "f.brinkmann@tu-berlin.de" },
     { name = "Anton Hoyer", email = "a.hoyer@tu-berlin.de" },
-    { name = "Emanuele Zanoni", email = "emanuele.zanoni@studenti.unipd.it" }
+    { name = "Emanuele Zanoni", email = "emanuele.zanoni@phd.unipd.it" }
 ]
 keywords = [
     'auditory model',

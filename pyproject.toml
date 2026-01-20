@@ -1,7 +1,7 @@
 [project]
 name = "bayesian_listener"
 version = "0.1"
-description = "Python Boilerplate contains all the boilerplate you need to create a Python package."
+description = "Perceptually-grounded spatial audio localization model implementing Bayesian inference for HRTF evaluation and individualization."
 readme = "README.md"
 license = {file = "LICENSE"}
 requires-python = ">=3.9"
@@ -9,7 +9,7 @@ authors = [
     { name = "Roberto Barumerli", email = "r.barumerli@imperial.ac.uk" },
     { name = "Fabian Brinkmann", email = "f.brinkmann@tu-berlin.de" },
     { name = "Anton Hoyer", email = "a.hoyer@tu-berlin.de" },
-    { name = "Emanuele Zanoni", email = "emanuele.zanoni@unipd.it" }
+    { name = "Emanuele Zanoni", email = "emanuele.zanoni@phd.unipd.it" }
 ]
 keywords = [
     'auditory model',

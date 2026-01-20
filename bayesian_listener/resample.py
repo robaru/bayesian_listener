@@ -14,7 +14,10 @@ import warnings
 # -----------------------------------------------------------------------------
 
 # as in barumerli2023
-def resample_barumerli2023(values, coords_in, dirs = None, flag_regularisation = True):
+def resample_barumerli2023(values,
+                           coords_in,
+                           dirs = None,
+                           flag_regularisation = True):
     """
     Resample using spherical harmonics as in Barumerli et al. 2023.
 
@@ -22,7 +25,8 @@ def resample_barumerli2023(values, coords_in, dirs = None, flag_regularisation =
     ----------
     values : array or list of arrays
         Single cue array of shape (n_dirs, ...) or list of cue arrays.
-        If list, each array must have shape (n_dirs, ...) where first dimension matches.
+        If list, each array must have shape (n_dirs, ...)
+        where first dimension matches.
     coords_in : Coordinates
         Source coordinates
     dirs : array or Coordinates, optional
@@ -49,7 +53,8 @@ def resample_barumerli2023(values, coords_in, dirs = None, flag_regularisation =
 
     if dirs is None:
         # %% Generate t-design points
-        # the advantage of using this is that the weights are equal when integrating
+        # the advantage of using this is that
+        # the weights are equal when integrating
         dirs = spaudiopy.grids.load_n_design(64)# 2112 equally distant points
 
     # assert(N_SH < N_dirs, ...
@@ -72,7 +77,9 @@ def resample_barumerli2023(values, coords_in, dirs = None, flag_regularisation =
     zen = np.pi - ele
 
     # get SH basis on new directions
-    int_new = spaudiopy.sph.sh_matrix(N_sph, dirs_SH[:, 0], dirs_SH[:, 1], sh_type='real')
+    int_new = spaudiopy.sph.sh_matrix(N_sph, dirs_SH[:, 0],
+                                      dirs_SH[:, 1],
+                                      sh_type='real')
 
     # Ensure all cues are at least 2D
     cues = [c[:, np.newaxis] if c.ndim == 1 else c for c in cues]
@@ -89,7 +96,9 @@ def resample_barumerli2023(values, coords_in, dirs = None, flag_regularisation =
         # get SH basis on old directions
         Y_N_tik = spaudiopy.sph.sh_matrix(N_sph, azi, zen, 'real')
         # Compute regularized inverse once
-        Y_inv_reg = np.linalg.solve(np.transpose(Y_N_tik)@Y_N_tik+lambda_val*SIG, np.transpose(Y_N_tik))
+        Y_inv_reg = np.linalg.solve(
+            np.transpose(Y_N_tik)@Y_N_tik+lambda_val*SIG,
+            np.transpose(Y_N_tik))
         # Transform all cues to SH domain
         cues_SH = [Y_inv_reg @ c for c in cues]
 
@@ -120,17 +129,21 @@ def build_Y(dirs, N):
     return Y
 
 def build_bau_damping(N):
-    """Bau et al. damping: D_ii = 1 + n(n+1)"""
+    """Bau et al. damping: D_ii = 1 + n(n+1)."""
     num_coeffs = (N + 1) ** 2
     D = np.zeros((num_coeffs, num_coeffs))
     idx = 0
     for n in range(N + 1):
-        for m in range(-n, n + 1):
+        for _ in range(-n, n + 1):
             D[idx, idx] = 1 + n * (n + 1)
             idx += 1
     return D
 
-def find_max_order(dirs, thresh=12.25, N_max=35, regularised=True, epsilon = 1e-2):
+def find_max_order(dirs,
+                   thresh=12.25,
+                   N_max=35,
+                   regularised=True,
+                   epsilon=1e-2):
     """
     Return the largest N ≤ N_max such that cond(Y(dirs,N)) < thresh.
 
@@ -173,8 +186,8 @@ def solve_sh(Y, H):
 
 def interpolate_HRTF(query_dirs, C, N):
     """
-    query_dirs: (Q,2) array of (az,el)
-    returns: (Q,F) matrix of interpolated HRTF magnitudes
+    query_dirs: (Q,2) array of (az,el).
+    returns: (Q,F) matrix of interpolated HRTF magnitudes.
     """
     Yq = build_Y(query_dirs, N)
     return Yq @ C
@@ -182,18 +195,19 @@ def interpolate_HRTF(query_dirs, C, N):
 # this is the first attempt to interpolate with SH
 def resample_old(values, coords_in, dirs = None, plot_grid=False):
     """
-    Resample function with regularisation and control on condition number
+    Resample function with regularisation and control on condition number.
 
     :param values: Description
     :param coords_in: Description
     :param dirs: Description
     :param plot_grid: Description
     """
-    N_sph = 15
+    # N_sph = 15
 
     if dirs is None:
         # %% Generate t-design points
-        # the advantage of using this is that the weights are equal when integrating
+        # the advantage of using this is that
+        # the weights are equal when integrating
         dirs = spaudiopy.grids.load_n_design(64)# 2112 equally distant points
     else:
         assert(isinstance(dirs, Coordinates))
@@ -207,7 +221,7 @@ def resample_old(values, coords_in, dirs = None, plot_grid=False):
     dirs_original = c[:, (0, 1)]
 
     # move to navigation coordinates
-    azi = dirs_original[:, 0]  # must be in [0, 2*pi]
+    # azi = dirs_original[:, 0]  # must be in [0, 2*pi]
     ele = dirs_original[:, 1]
     if np.any(ele < 0):
         ele = ele + np.pi/2 # must be in [0, pi].
@@ -306,7 +320,8 @@ def complement_sampling(coordinates):
     if min_elevation > 0:
         warnings.warn(
             'Detected positive minimum elevation during resampling.'
-            'Manual resampling might be required')
+            'Manual resampling might be required',
+            stacklevel=2)
 
     # find and add mirror points with added 0.1 degree safety margin
     mask = coordinates.elevation > -min_elevation + 0.0017
@@ -348,7 +363,7 @@ def resample_two_step(cues, coordinates, template, second_step):
 
     # check input format
     if not isinstance(cues, (list, tuple)):
-        cues = [cues, ]
+        cues = [cues]
         passed_list = False
     else:
         passed_list = True
@@ -356,11 +371,15 @@ def resample_two_step(cues, coordinates, template, second_step):
     # Convert custom Coordinates to pyfar.Coordinates if needed
     if isinstance(coordinates, Coordinates):
         coords_cart = coordinates.convert('cartesian')
-        coordinates = pf.Coordinates.from_cartesian(coords_cart[:, 0], coords_cart[:, 1], coords_cart[:, 2])
+        coordinates = pf.Coordinates.from_cartesian(coords_cart[:, 0],
+                                                    coords_cart[:, 1],
+                                                    coords_cart[:, 2])
 
     # Convert template to pyfar.Coordinates if it's a numpy array
     if isinstance(template, np.ndarray):
-        template = pf.Coordinates.from_cartesian(template[:, 0], template[:, 1], template[:, 2])
+        template = pf.Coordinates.from_cartesian(template[:, 0],
+                                                 template[:, 1],
+                                                 template[:, 2])
 
     # HRTF measurement grids usually lack the bottom, so we add it
     coordinates_complemented, mask = complement_sampling(coordinates)
@@ -448,7 +467,8 @@ def resample(cues, coordinates, method='SH'):
     ----------
     cues : array or list of arrays
         Single cue array of shape (n_dirs, ...) or list of cue arrays.
-        If list, each array must have shape (n_dirs, ...) where first dimension matches.
+        If list, each array must have shape (n_dirs, ...)
+        where first dimension matches.
     coordinates : Coordinates
         Source coordinates
     method : str
@@ -458,7 +478,8 @@ def resample(cues, coordinates, method='SH'):
     -------
     result : array or list of arrays
         Resampled cues. Returns same type (single array or list) as input.
-        Each array has shape (n_template_dirs, ...) matching input except first dimension.
+        Each array has shape (n_template_dirs, ...)
+        matching input except first dimension.
     template_coords : Coordinates
         Output coordinates
     """
@@ -466,23 +487,32 @@ def resample(cues, coordinates, method='SH'):
 
     if method.lower() == 'barycentric':
         result = resample_two_step(cues, coordinates, template, 'barycentric')
-        template_coords = Coordinates(positions=template, convention='cartesian')
+        template_coords = Coordinates(positions=template,
+                                      convention='cartesian')
     elif method.lower() == 'sh':
         result = resample_two_step(cues, coordinates, template, 'sh')
-        template_coords = Coordinates(positions=template, convention='cartesian')
+        template_coords = Coordinates(positions=template,
+                                      convention='cartesian')
     elif method.lower() == 'shmax':
         result = resample_two_step(cues, coordinates, template, 'shmax')
-        template_coords = Coordinates(positions=template, convention='cartesian')
+        template_coords = Coordinates(positions=template,
+                                      convention='cartesian')
     elif method.lower() == 'barumerli2023':
-        result, template_coords = resample_barumerli2023(cues, coordinates, template)
+        result, template_coords = resample_barumerli2023(cues,
+                                                         coordinates,
+                                                         template)
     else:
         raise ValueError(f"Unknown resample method: {method}")
 
     return result, template_coords
 
-def plot_resampling_grid(coords_meas_cart, dirs_virt, missing_mask, z_min_meas):
+def plot_resampling_grid(coords_meas_cart,
+                         dirs_virt,
+                         missing_mask,
+                         z_min_meas):
     """
-    Plot the resampling grid showing measured directions (black) and added directions (red).
+    Plot the resampling grid showing measured directions (black)
+    and added directions (red).
 
     Parameters
     ----------
@@ -503,13 +533,25 @@ def plot_resampling_grid(coords_meas_cart, dirs_virt, missing_mask, z_min_meas):
     ax1 = fig.add_subplot(121, projection='3d')
 
     # Plot measured directions (black)
-    ax1.scatter(coords_meas_cart[:, 0], coords_meas_cart[:, 1], coords_meas_cart[:, 2],
-                c='black', s=20, alpha=0.6, label=f'Measured (n={len(coords_meas_cart)})')
+    ax1.scatter(coords_meas_cart[:, 0],
+                coords_meas_cart[:, 1],
+                coords_meas_cart[:, 2],
+                c='black',
+                s=20,
+                alpha=0.6,
+                label=f'Measured (n={len(coords_meas_cart)})',
+                )
 
     # Plot added directions (red)
     dirs_added = dirs_virt[missing_mask]
-    ax1.scatter(dirs_added[:, 0], dirs_added[:, 1], dirs_added[:, 2],
-                c='red', s=20, alpha=0.6, label=f'Added (n={np.sum(missing_mask)})')
+    ax1.scatter(dirs_added[:, 0],
+                dirs_added[:, 1],
+                dirs_added[:, 2],
+                c='red',
+                s=20,
+                alpha=0.6,
+                label=f'Added (n={np.sum(missing_mask)})',
+                )
 
     # Draw horizontal plane at z_min_meas
     xx, yy = np.meshgrid(np.linspace(-1, 1, 10), np.linspace(-1, 1, 10))
@@ -528,10 +570,19 @@ def plot_resampling_grid(coords_meas_cart, dirs_virt, missing_mask, z_min_meas):
     cm = Coordinates(positions = coords_meas_cart, convention = 'cartesian')
     cd = Coordinates(positions = dirs_added, convention = 'cartesian')
 
-    ax2.scatter(cm.az(), cm.el(),
-                c='black', s=20, alpha=0.6, label=f'Measured (n={len(coords_meas_cart)})')
-    ax2.scatter(cd.az(), cd.el(),
-                c='red', s=20, alpha=0.6, label=f'Added (n={np.sum(missing_mask)})')
+    ax2.scatter(cm.az(),
+                cm.el(),
+                c='black',
+                s=20,
+                alpha=0.6,
+                label=f'Measured (n={len(coords_meas_cart)})',
+                )
+    ax2.scatter(cd.az(),
+                cd.el(),
+                c='red',
+                s=20, alpha=0.6,
+                label=f'Added (n={np.sum(missing_mask)})',
+                )
     ax2.set_xlabel('Lateral (deg)')
     ax2.set_ylabel('Polar (deg)')
     ax2.set_title('Top View: Resampling Grid')
@@ -542,7 +593,8 @@ def plot_resampling_grid(coords_meas_cart, dirs_virt, missing_mask, z_min_meas):
     plt.tight_layout()
     plt.show()
 
-    print(f"Grid statistics:")
+    print("Grid statistics:")
     print(f"  Measured directions: {len(coords_meas_cart)}")
     print(f"  Added directions (z < {z_min_meas:.3f}): {np.sum(missing_mask)}")
-    print(f"  Total directions for interpolation: {len(coords_meas_cart) + np.sum(missing_mask)}")
+    print(f"  Total directions for interpolation: "
+          f"{len(coords_meas_cart) + np.sum(missing_mask)}")

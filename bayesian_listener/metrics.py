@@ -7,23 +7,59 @@ import numpy as np
 # Shared dictionary to hold metric functions and their metadata
 METRIC_FUNCTIONS = {}
 
-def register_metric(name, coord_convention, input_unit, output_unit=None, description=None, **extra_metadata):
+def register_metric(name,
+                    coord_convention,
+                    input_unit,
+                    output_unit=None,
+                    description=None,
+                    **extra_metadata,
+                    ):
+    """
+    Decorator to register a metric function with metadata.
+
+    Parameters
+    ----------
+    name : str
+        Name of the metric.
+    coord_convention : str
+        Coordinate convention used (e.g., 'horizontal-polar').
+    input_unit : str
+        Unit of the input data (e.g., 'radians').
+    output_unit : str, optional
+        Unit of the output data (e.g., 'radians', 'percentage').
+    description : str, optional
+        Description of the metric.
+    **extra_metadata : dict
+        Additional metadata to store.
+
+    Returns
+    -------
+    decorator : function
+        Decorator that registers the metric function.
+    """
     def decorator(func):
+        """
+        Decorator that registers the metric function with metadata.
+        """
         def wrapped(*args, **kwargs):
+            """
+            Wrapper to ensure uniform output format.
+            """
             result = func(*args, **kwargs)
             if isinstance(result, tuple):
                 value, auxiliary_output = result
             else:
                 value = result
                 auxiliary_output = {}
-            return value, auxiliary_output  # Every function is uniformly formatted to return a tuple
+            # Every function is uniformly formatted to return a tuple
+            return value, auxiliary_output
         wrapped._metadata = {
             'name': name,
             'coord_convention': coord_convention,
             'input_unit': input_unit,
             'output_unit': output_unit,
             'description': description,
-            **extra_metadata
+            **extra_metadata,
         }
         METRIC_FUNCTIONS[name] = wrapped
         return wrapped
@@ -31,13 +67,35 @@ def register_metric(name, coord_convention, input_unit, output_unit=None, descri
 
 
 def get_metric_metadata(name):
+    """
+    Retrieve metadata for a registered metric.
+
+    Parameters
+    ----------
+    name : str
+        Name of the metric.
+
+    Returns
+    -------
+    metadata : dict
+        Metadata dictionary for the metric.
+    """
     func = METRIC_FUNCTIONS.get(name)
     if func is None:
         raise ValueError(f"Metric '{name}' not found.")
-    return func._metadata.copy()  # Return a copy to prevent external modification
+    # Return a copy to prevent external modification
+    return func._metadata.copy()
 
 
 def describe_metrics(name=None):
+    """
+    Print descriptions of registered metrics.
+
+    Parameters
+    ----------
+    name : str, optional
+        Name of the metric to describe. If None, lists all metrics.
+    """
     if name:
         info = get_metric_metadata(name)
         print(f"Metric: {name}")
@@ -47,7 +105,8 @@ def describe_metrics(name=None):
         print("Available metrics:")
         for name in METRIC_FUNCTIONS.keys():
             print(f"  {name}: {get_metric_metadata(name)['description']}")
-        print("Use describe_metrics(name) to get details for a specific metric.")
+        print(
+            "Use describe_metrics(name) to get details for a specific metric.")
 
 
 def wrap_to_pi(rad):
@@ -57,14 +116,14 @@ def wrap_to_pi(rad):
 
 def wrap_polar_angle(angle_rad):
     """
-    Wrap polar angles to the range [-π/2, 3π/2) ≡ [-90°, 270°)
+    Wrap polar angles to the range [-π/2, 3π/2) ≡ [-90°, 270°).
     """
     return (angle_rad + np.pi / 2) % (2 * np.pi) - np.pi / 2
 
 
 
 
-# ------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 # Metric Functions
 
 
@@ -75,12 +134,18 @@ def wrap_polar_angle(angle_rad):
     output_unit="radians",
     description=(
         "Lateral RMS error (in radians).\n\t"
-        "RMS of the difference between response and target lateral angles within ±60° lateral.\n\t"
+        "RMS of the difference between response and target lateral angles\n\t"
+        "within ±60° lateral.\n\t"
         "See rms lateral error in Middlebrooks (1999)"),
-    ylabel="Lateral RMS error (rad)"
+    ylabel="Lateral RMS error (rad)",
 )
 def rmsL(true, est):
-    lat_true = wrap_to_pi(true[..., 0])  # lateral in [-π, π), then restrict to [-π/2, π/2]
+    """
+    Compute lateral RMS error within ±60° lateral.
+    More details in the decorator above.
+    """
+    # lateral in [-π, π), then restrict to [-π/2, π/2]
+    lat_true = wrap_to_pi(true[..., 0])
     lat_true = np.clip(lat_true, -np.pi/2, np.pi/2) # enforce [-π/2, π/2]
 
     lat_est = wrap_to_pi(est[..., 0])
@@ -101,23 +166,31 @@ def rmsL(true, est):
     output_unit="radians",
     description=(
         "RMS polar error (local, central responses only).\n\t"
-        "Root mean square of polar angle error, restricted to responses with:\n\t"
+        "Root mean square of polar angle error,\n\t"
+        "restricted to responses with:\n\t"
         "- lateral response within ±30° (±π/6 radians)\n\t"
         "- polar error less than 90° (π/2 radians).\n\t"
         "Based on definition in Middlebrooks (1999)."
     ),
-    ylabel="Local central RMS polar error (rad)"
+    ylabel="Local central RMS polar error (rad)",
 )
 def rmsPmedianlocal(true, est):
-    lat_est = wrap_to_pi(est[..., 0])  # lateral in [-π, π), then restrict to [-π/2, π/2]
-    assert np.all(np.abs(lat_est) <= np.pi/2), "Lateral angles must be in [-π/2, π/2]"
+    """
+    Compute local RMS polar error within ±30° lateral and polar error < 90°.
+    More details in the decorator above.
+    """
+    # lateral in [-π, π), then restrict to [-π/2, π/2]
+    lat_est = wrap_to_pi(est[..., 0])
+    assert np.all(np.abs(lat_est) <= np.pi/2), \
+        "Lateral angles must be in [-π/2, π/2]"
 
     pol_true = wrap_polar_angle(true[..., 1])  # polar in [-π/2, 3π/2)
     pol_est = wrap_polar_angle(est[..., 1])
 
     # 1. Select central responses: lateral response within ±30°
     central_mask = np.abs(lat_est) <= np.deg2rad(30)
-    assert np.any(central_mask), "No central responses found within ±30° lateral range."
+    assert np.any(central_mask), \
+        "No central responses found within ±30° lateral range."
 
     # 2. Exclude responses with polar error greater than 90°
     polar_diff = wrap_to_pi(pol_est - pol_true)[central_mask]
@@ -142,19 +215,27 @@ def rmsPmedianlocal(true, est):
     ylabel="Quadrant errors (%)",
     auxiliary_output={
         'confusion_count': 'Number of confusions (polar error ≥ 90°)',
-        'response_count': 'Number of responses within the lateral range (|lat| ≤ 30°)'
-    }
+        'response_count': \
+            'Number of responses within the lateral range (|lat| ≤ 30°)',
+    },
 )
 def querrMiddlebrooks(true, est):
-    lat_est = wrap_to_pi(est[..., 0])  # lateral in [-π, π), then restrict to [-π/2, π/2]
-    assert np.all(np.abs(lat_est) <= np.pi/2), "Lateral angles must be in [-π/2, π/2]"
+    """
+    Compute quadrant error rate as defined in Middlebrooks (1999).
+    More details in the decorator above.
+    """
+    # lateral in [-π, π), then restrict to [-π/2, π/2]
+    lat_est = wrap_to_pi(est[..., 0])
+    assert np.all(np.abs(lat_est) <= np.pi/2), \
+        "Lateral angles must be in [-π/2, π/2]"
 
     pol_true = wrap_polar_angle(true[..., 1])  # polar in [-π/2, 3π/2)
     pol_est = wrap_polar_angle(est[..., 1])
 
     # 1. Filter central responses: lateral response within ±30°
     central_mask = np.abs(lat_est) <= np.deg2rad(30)
-    assert np.any(central_mask), "No central responses found within ±30° lateral range."
+    assert np.any(central_mask), \
+        "No central responses found within ±30° lateral range."
 
     # 2. Compute polar error and count confusions (polar error ≥ 90°)
     polar_error = np.abs(wrap_to_pi(pol_est - pol_true))[central_mask]

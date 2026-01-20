@@ -8,6 +8,8 @@ import pandas as pd
 from pathlib import Path
 import pickle
 import datetime
+import psutil
+import os
 
 # feature functions
 def mag2db(mag):
@@ -17,7 +19,8 @@ def erb_space(freq_range=[7e2, 18e3], erb_spacing=1):
     #translated from amt/audspacebw.m focusing on ERB-rate scale
 
     # Convert frequency limits to auditory scale (ERB-rate scale)
-    audlimits = 9.2645 * np.sign(freq_range) * np.log(1 + np.abs(freq_range) * 0.00437)
+    audlimits = \
+        9.2645 * np.sign(freq_range) * np.log(1 + np.abs(freq_range) * 0.00437)
     audrange = audlimits[1] - audlimits[0]
 
     # Calculate number of points (excluding final point)
@@ -33,7 +36,8 @@ def erb_space(freq_range=[7e2, 18e3], erb_spacing=1):
     n += 1
 
     # Convert auditory scale points back to Hz
-    fc = (1 / 0.00437) * np.sign(audpoints) * (np.exp(np.abs(audpoints) / 9.2645) - 1)
+    fc = (1 / 0.00437) * np.sign(audpoints) * \
+        (np.exp(np.abs(audpoints) / 9.2645) - 1)
 
     return fc
 
@@ -47,7 +51,7 @@ def gammatone(
 ):
     """
     Complex-valued, all-pole gammatone filter coefficients as in Lyon, 1997.
-    The function has been taken from the AMT/gammatone.m
+    The function has been taken from the AMT/gammatone.m.
 
     Parameters
     ----------
@@ -63,8 +67,8 @@ def gammatone(
     scale : {"0dBforall", "6dBperoctave"}
         Amplitude scaling mode.
     phase : {"causalphase", "peakphase", "exppeakphase"}
-        Phase option. "exppeakphase" additionally aligns maxima using an impulse
-        response simulation (requires SciPy).
+        Phase option. "exppeakphase" additionally aligns maxima using an
+        impulse response simulation (requires SciPy).
 
     Returns
     -------
@@ -96,7 +100,8 @@ def gammatone(
         raise ValueError("scale must be '0dBforall' or '6dBperoctave'.")
 
     if phase not in {"causalphase", "peakphase", "exppeakphase"}:
-        raise ValueError("phase must be 'causalphase', 'peakphase', or 'exppeakphase'.")
+        raise ValueError(
+            "phase must be 'causalphase', 'peakphase', or 'exppeakphase'.")
 
     # ---- bandwidth multiplier (match the MATLAB formula literally) ----
     if betamul is None:
@@ -126,7 +131,7 @@ def gammatone(
     # ---- design each channel ----
     for i in range(nch):
         # Complex pole location (all-pole, repeated n times)
-        atilde = np.exp(-2 * np.pi * beta[i] / fs - 1j * 2 * np.pi * fc[i] / fs)
+        atilde = np.exp(-2*np.pi * beta[i] / fs - 1j * 2*np.pi * fc[i] / fs)
 
         # Denominator from repeated root (length n+1, leading 1)
         # np.poly takes roots and returns monic polynomial coefficients.
@@ -157,7 +162,8 @@ def gammatone(
             envmax = np.argmax(np.abs(tmp))
             sigmax = np.argmax(tmp)
             # Equation analogous to the MATLAB code:
-            phi_delay = fc[i] * (-2 * np.pi - np.pi / 4.0) * (envmax - sigmax) / fs
+            phi_delay = \
+                fc[i] * (-2*np.pi - np.pi / 4.0) * (envmax - sigmax) / fs
             b_i = b_i * np.exp(1j * phi_delay)
 
         # Store results
@@ -173,11 +179,13 @@ def itdestimator(signals, fs=None):
     """
     Estimate ITD from the given stimulus.
 
-    Parameters:
+    Parameters
+    ----------
         Obj : 3D numpy array or object with IR data
         fs : Sampling rate (required if Obj is a 3D array)
 
-    Returns:
+    Returns
+    -------
         toa_diff : Time of arrival difference
     """
 
@@ -222,7 +230,8 @@ def itdestimator(signals, fs=None):
 
 def scatter_von_mises(dirs, sigma_m):
     assert dirs.shape[1] == 3 or dirs.size == 3
-    assert sigma_m >= 5, 'sensorimotor concentration too small and can lead to complex values'
+    assert sigma_m >= 5, \
+        'sensorimotor concentration too small and can lead to complex values'
 
     dirs = np.squeeze(dirs)
 
@@ -243,6 +252,7 @@ def scatter_von_mises(dirs, sigma_m):
 
 def randvmf(kappa, mu, seed = None):
     np.random.seed(seed)
+
 
     assert mu is not None
     assert kappa > 0
@@ -315,7 +325,8 @@ def multiple_logpdfs_vec_input(xs, means, covs):
     Us   = vecs * np.sqrt(valsinvs)[:, None]
     devs = xs[:, None, :] - means[None, :, :]
 
-    # Use `einsum` for matrix-vector multiplications across the first dimension.
+    # Use `einsum` for matrix-vector multiplications
+    # across the first dimension.
     devUs = np.einsum('jnk,nki->jni', devs, Us)
 
     # Compute the Mahalanobis distance by squaring each term and summing.
@@ -335,13 +346,16 @@ def multiple_logpdfs_vec_input_single_cov(xs, means, logdet, Us):
     https://gregorygundersen.com/blog/2020/12/12/group-multivariate-normal-pdf/
 
     The big idea is to do one intensive operation, eigenvalue decomposition,
-    and then use that decomposition to compute the matrix inverse and determinant cheaply.
+    and then use that decomposition to compute the matrix inverse
+    and determinant cheaply.
     """
 
     devs = xs[:, None, :] - means[None, :, :]
 
-    # Use `einsum` for matrix-vector multiplications across the first dimension.
-    # devUs = np.einsum('jnk,ki->jni', devs, Us) -> using this notation is very slow (twice as much)
+    # Use `einsum` for matrix-vector multiplications
+    # across the first dimension.
+    # devUs = np.einsum('jnk,ki->jni', devs, Us) ->
+    # using this notation is very slow (twice as much)
     devUs = devs @ Us
 
     # Compute the Mahalanobis distance by squaring each term and summing.
@@ -362,7 +376,8 @@ def multiple_logpdfs_vec_input_single_cov(xs, means, logdet, Us):
     https://gregorygundersen.com/blog/2020/12/12/group-multivariate-normal-pdf/
 
     The big idea is to do one intensive operation, eigenvalue decomposition,
-    and then use that decomposition to compute the matrix inverse and determinant cheaply.
+    and then use that decomposition to compute the matrix inverse
+    and determinant cheaply.
     """
 
     n_samples = xs.shape[0]
@@ -395,13 +410,17 @@ def multiple_logpdfs_vec_input_single_cov(xs, means, logdet, Us):
     return out
 
 @jit(nopython=True, parallel=True)
-def multiple_logpdfs_vec_input_single_cov_diagonal(xs, means, logdet, sigma_inv_diag):
+def multiple_logpdfs_vec_input_single_cov_diagonal(xs,
+                                                   means,
+                                                   logdet,
+                                                   sigma_inv_diag):
     """
     Optimized version for diagonal covariance.
     sigma_inv_diag: (P,) array of 1/sigma_i²
     """
     devs = xs[:, None, :] - means[None, :, :]  # (n_samples, n_means, P)
-    # Mahalanobis distance for diagonal cov: dev.T @ inv(Σ) @ dev = sum(dev² / sigma²)
+    # Mahalanobis distance for diagonal cov:
+    # dev.T @ inv(Σ) @ dev = sum(dev² / sigma²)
     mahas = np.sum(devs**2 * sigma_inv_diag, axis=2)  # (n_samples, n_means)
 
     dim = xs.shape[1]
@@ -469,7 +488,10 @@ def clear_cache(sofa_file=None):
         else:
             print("✓ No cache index found")
 
-def load_from_cache(cache_dir, sofa_file, attributes_to_restore, interpolation='SH'):
+def load_from_cache(cache_dir,
+                    sofa_file,
+                    attributes_to_restore,
+                    interpolation='SH'):
     """
     Try to load cached data from pickle file.
 
@@ -503,7 +525,8 @@ def load_from_cache(cache_dir, sofa_file, attributes_to_restore, interpolation='
 
     # Handle backward compatibility: add 'interpolation' column if missing
     if 'interpolation' not in cache_df.columns:
-        cache_df['interpolation'] = 'SH'  # Assume old caches used default SH method
+        # Assume old caches used default SH method
+        cache_df['interpolation'] = 'SH'
 
     # Check for matching entry (including interpolation method)
     match = cache_df[(cache_df['sofa_name'] == sofa_name) &
@@ -523,12 +546,13 @@ def load_from_cache(cache_dir, sofa_file, attributes_to_restore, interpolation='
             cached_data = pickle.load(f)
 
         # Validate that all required attributes are present
-        missing = [attr for attr in attributes_to_restore if attr not in cached_data]
+        missing = [
+            attr for attr in attributes_to_restore if attr not in cached_data]
         if missing:
             print(f"⚠ Cache missing attributes: {missing}")
             return None
 
-        print(f"✓ Cache loaded successfully")
+        print("✓ Cache loaded successfully")
         return cached_data
 
     except Exception as e:
@@ -568,9 +592,16 @@ def save_to_cache(cache_dir, sofa_file, data_to_cache, interpolation='SH'):
         cache_df = pd.read_csv(cache_index_file)
         # Handle backward compatibility: add 'interpolation' column if missing
         if 'interpolation' not in cache_df.columns:
-            cache_df['interpolation'] = 'SH'  # Assume old caches used default SH method
+            # Assume old caches used default SH method
+            cache_df['interpolation'] = 'SH'
     else:
-        cache_df = pd.DataFrame(columns=['sofa_name', 'file_hash', 'interpolation', 'pkl_file', 'timestamp'])
+        cache_df = pd.DataFrame(columns=[
+            'sofa_name',
+            'file_hash',
+            'interpolation',
+            'pkl_file',
+            'timestamp',
+            ])
 
     # Check if entry already exists (same name, hash, and interpolation)
     match = cache_df[(cache_df['sofa_name'] == sofa_name) &
@@ -578,7 +609,11 @@ def save_to_cache(cache_dir, sofa_file, data_to_cache, interpolation='SH'):
                      (cache_df['interpolation'] == interpolation)]
 
     # Create new pickle filename with interpolation method and timestamp
-    pkl_filename = f"{Path(sofa_name).stem}_{file_hash[:8]}_{interpolation}_{timestamp}.pkl"
+    pkl_filename = (
+        f"{Path(sofa_name).stem}_{file_hash[:8]}"
+        f"_{interpolation}_{timestamp}.pkl"
+    )
+
     pkl_path = cache_dir / pkl_filename
 
     if not match.empty:
@@ -602,10 +637,12 @@ def save_to_cache(cache_dir, sofa_file, data_to_cache, interpolation='SH'):
             cache_df.loc[match.index[0], 'pkl_file'] = pkl_filename
             cache_df.loc[match.index[0], 'timestamp'] = timestamp
         else:
-            # Remove old entries for same file with different hash (but keep different interpolations)
-            old_entries = cache_df[(cache_df['sofa_name'] == sofa_name) &
-                                   (cache_df['file_hash'] != file_hash) &
-                                   (cache_df['interpolation'] == interpolation)]
+            # Remove old entries for same file with different hash
+            # (but keep different interpolations)
+            old_entries = cache_df[
+                (cache_df['sofa_name'] == sofa_name) &
+                (cache_df['file_hash'] != file_hash) &
+                (cache_df['interpolation'] == interpolation)]
 
             # Delete old pickle files with different hashes
             for _, row in old_entries.iterrows():
@@ -615,9 +652,10 @@ def save_to_cache(cache_dir, sofa_file, data_to_cache, interpolation='SH'):
                     print(f"→ Removed outdated cache: {row['pkl_file']}")
 
             # Remove old entries from dataframe
-            cache_df = cache_df[~((cache_df['sofa_name'] == sofa_name) &
-                                  (cache_df['file_hash'] != file_hash) &
-                                  (cache_df['interpolation'] == interpolation))]
+            cache_df = cache_df[~(
+                (cache_df['sofa_name'] == sofa_name) &
+                (cache_df['file_hash'] != file_hash) &
+                (cache_df['interpolation'] == interpolation))]
 
             # Add new entry
             new_row = pd.DataFrame([{
@@ -625,12 +663,12 @@ def save_to_cache(cache_dir, sofa_file, data_to_cache, interpolation='SH'):
                 'file_hash': file_hash,
                 'interpolation': interpolation,
                 'pkl_file': pkl_filename,
-                'timestamp': timestamp
+                'timestamp': timestamp,
             }])
             cache_df = pd.concat([cache_df, new_row], ignore_index=True)
 
         cache_df.to_csv(cache_index_file, index=False)
-        print(f"✓ Cache saved and index updated")
+        print("✓ Cache saved and index updated")
         return True
 
     except Exception as e:
@@ -642,9 +680,6 @@ def save_to_cache(cache_dir, sofa_file, data_to_cache, interpolation='SH'):
 # VARIOUS
 # -----------------------------------
 
-
-import psutil
-import os
 def print_memory_usage(label=""):
     """Print current memory usage."""
     process = psutil.Process(os.getpid())

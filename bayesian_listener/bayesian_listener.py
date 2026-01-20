@@ -485,40 +485,5 @@ class BayesianListener:
                                              np.log(np.finfo(amps.dtype).eps)),
                                              estimations.squeeze())
 
-def test_interp():
-    # doing it from scratch
-    sofa_file = 'data/P0001_FreeFieldCompMinPhase_48kHz.sofa'
-    am = BayesianListener(sofa_file)
-    am.prepare_features(use_cache=False, interpolation='SHMAX')
-
-    # Get target spectral cues to compute color limits
-    side = 0
-    dirs = am.coords.sph()
-    median_idx = np.abs(dirs[:, 0] - 0) < 2
-    elevations = dirs[median_idx, 1]
-    amps_target = am.spectral_cues[median_idx, :, side]
-    sorted_indices = np.argsort(elevations)
-    amps_target = amps_target[sorted_indices, :]
-
-    # Compute color limits from target
-    clim = (np.min(amps_target), np.max(amps_target))
-
-    # Create figure with two subplots
-    fig, axes = plt.subplots(1, 2, figsize=(16, 6))
-
-    # Plot target and template features side by side with same color limits
-    am.plot_cues('- Target features (i.e. original)',
-                 fig=fig,
-                 ax=axes[0],
-                 clim=clim)
-    am.template.plot_cues('- Template features (i.e. interpolated)',
-                          fig=fig, ax=axes[1],
-                          clim=clim,
-                          elev_min=-45)
-
-    plt.tight_layout()
-    plt.show()
-
-
 
 

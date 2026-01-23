@@ -1,3 +1,7 @@
+"""
+This module contains functions to compute localization errors based on a set
+of target and response directions.
+"""
 import numpy as np
 
 # Shared dictionary to hold metric functions and their metadata

@@ -14,12 +14,12 @@ Types of Contributions
 Report Bugs or Suggest Features
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-The best place for this is https://github.com/robaru/bayesian_listener/issues.
+The best place for this is https://github.com/robaru/bayesian_listener_package/issues.
 
 Fix Bugs or Implement Features
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Look through https://github.com/robaru/bayesian_listener/issues for bugs or feature request
+Look through https://github.com/robaru/bayesian_listener_package/issues for bugs or feature request
 and contact us or comment if you are interested in implementing.
 
 Write Documentation
@@ -32,18 +32,18 @@ articles, and such.
 Get Started!
 ------------
 
-Ready to contribute? Here's how to set up `bayesian_listener` for local development using the command-line interface. Note that several alternative user interfaces exist, e.g., the Git GUI, `GitHub Desktop <https://desktop.github.com/>`_, extensions in `Visual Studio Code <https://code.visualstudio.com/>`_ ...
+Ready to contribute? Here's how to set up `bayesian_listener_package` for local development using the command-line interface. Note that several alternative user interfaces exist, e.g., the Git GUI, `GitHub Desktop <https://desktop.github.com/>`_, extensions in `Visual Studio Code <https://code.visualstudio.com/>`_ ...
 
 1. `Fork <https://docs.github.com/en/get-started/quickstart/fork-a-repo/>`_ the `bayesian_listener` repo on GitHub.
-2. Clone your fork locally and cd into the bayesian_listener directory::
+2. Clone your fork locally and cd into the bayesian_listener_package directory::
 
-    $ git clone https://github.com/YOUR_USERNAME/bayesian_listener.git
-    $ cd bayesian_listener
+    $ git clone https://github.com/robaru/bayesian_listener_package.git
+    $ cd bayesian_listener_package
 
 3. Install your local copy into a virtualenv. Assuming you have Anaconda or Miniconda installed, this is how you set up your fork for local development::
 
-    $ conda create --name bayesian_listener python
-    $ conda activate bayesian_listener
+    $ conda create --name bayesian_listener_package python
+    $ conda activate bayesian_listener_package
     $ pip install -e ".[dev]"
 
 4. Create a branch for local development. Indicate the intention of your branch in its respective name (i.e. `feature/branch-name` or `bugfix/branch-name`)::

@@ -1,3 +1,4 @@
+"""This model contains helpful utility functions."""
 import numpy as np
 from scipy.signal import butter, hilbert, correlate, lfilter
 from math import factorial

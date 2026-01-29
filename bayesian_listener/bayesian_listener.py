@@ -268,7 +268,8 @@ class BayesianListener:
               target = None,
               repetitions = 50,
               seed = None,
-              prior = 'horizontal'):
+              prior = 'horizontal',
+              store_posterior = False):
         rng = np.random.default_rng(seed)
 
 
@@ -336,6 +337,11 @@ class BayesianListener:
 
         # Internal belief computation
         template_num = template_feat.shape[0]
+        if store_posterior:
+            posterior = np.zeros((target_num, repetitions, template_num))
+        else:
+            posterior_idx = np.zeros((target_num, repetitions), dtype=np.int32)
+
         posterior = np.zeros((target_num, repetitions, template_num))
 
         if repetitions > 1:
@@ -355,7 +361,11 @@ class BayesianListener:
                 # normalise again
                 # (there is a better way but this is ok for now)
                 logpost = logpost - logsumexp(logpost, axis=1, keepdims=True)
-                posterior[t, :,:] = logpost
+
+                if store_posterior:
+                    posterior[t, :, :] = logpost
+                else:
+                    posterior_idx[t, :] = np.argmax(logpost, axis=1)
         else:
             for t in range(target_num):
                 # for ta in range(target_num):
@@ -396,10 +406,14 @@ class BayesianListener:
                 # logpost = np.log(post+np.finfo(post.dtype).eps)
 
                 # Store posterior -
-                posterior[t, 0,: ] = logpost
+                if store_posterior:
+                    posterior[t, 0, :] = logpost
+                else:
+                    posterior_idx[t, :] = np.argmax(logpost, axis=0)
 
         # Results
-        return posterior
+        return posterior if store_posterior else posterior_idx
+
 
     def estimate(self, posterior, sigma_motor=None, seed=None):
         """
@@ -408,7 +422,8 @@ class BayesianListener:
         Parameters
         ----------
         posterior : ndarray
-            Posterior distribution (trials x repetitions x templates)
+            Either full posterior (trials × repetitions × templates)
+            OR argmax indices (trials × repetitions) if computed with store_posterior=False
         sigma_motor : float or None, optional
             Motor noise standard deviation in degrees.
             If None, uses self.parameters['sigma_motor'].
@@ -424,15 +439,21 @@ class BayesianListener:
         """
         repetitions = np.size(posterior, 1)
         trials = np.size(posterior, 0)
-
         assert(trials > 0)
-        estimations = np.zeros((trials, repetitions, 3))
+
         coords_temp = self.template.coords.cartesian
-        for t in range(trials):
-            for r in range(repetitions):
-                # Decision stage
-                idx = np.argmax(posterior[t, r, :])
-                estimations[t, r, :] = coords_temp[idx,:]
+
+        # Shape check: 2D = indices, 3D = full posterior
+        if (posterior.ndim == 2):
+            # Shape: (trials, repetitions, 3)
+            estimations = coords_temp[posterior]
+        else:
+            estimations = np.zeros((trials, repetitions, 3))
+            # loops for full posterior
+            for t in range(trials):
+                for r in range(repetitions):
+                    idx = np.argmax(posterior[t, r, :])
+                    estimations[t, r, :] = coords_temp[idx, :]
 
         # pointing error - apply only if sigma_motor is not disabled
         if sigma_motor is None:

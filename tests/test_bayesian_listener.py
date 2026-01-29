@@ -130,6 +130,70 @@ def test_model_multiple():
                 return False
 
 
+def test_model_multiple():
+    """Test inference with two targets and two repetitions.
+
+    Verifies that the model produces correct output shapes and that the
+    estimated directions remain close to the true target directions,
+    indicating the model holds for this configuration.
+    """
+    sofa_file = get_sofa_file()
+    am = BayesianListener(sofa_file)
+    am.prepare_features()
+
+    # Set parameters to minimum values
+    am.parameters = {
+        "sigma_itd": 1e-1,
+        "sigma_ild": 1e-1,
+        "sigma_spectral": 1e-1,
+        "sigma_prior": 180,
+        "sigma_motor": 0,
+    }
+
+    # Pick two targets from distinct directions
+    all_targets = am.represent()
+    target_indices = [100, 260]
+    targets = all_targets[target_indices, :]
+
+    # Get true target positions in spherical coordinates
+    true_coords = am.coords.sph()
+    true_dirs = true_coords[target_indices, :]  # (2, 2) -> azimuth, elevation
+
+    # Run inference: 2 targets x 2 repetitions
+    posterior = am.infer(targets, repetitions=2, seed=42)
+    estimation = am.estimate(posterior, sigma_motor=0)
+
+    # Verify shapes: (n_targets, n_repetitions, 3)
+    assert estimation.shape == (2, 2, 3), \
+        f"Expected shape (2, 2, 3), got {estimation.shape}"
+
+    # All estimated directions should be unit vectors
+    norms = np.linalg.norm(estimation, axis=-1)
+    np.testing.assert_allclose(norms, 1.0, atol=0.1,
+                               err_msg="Estimations should be unit vectors")
+
+    # Convert estimations to spherical and check angular proximity to targets
+    # For each target, at least one repetition should be within 30 deg
+    tolerance_deg = 5
+    for t_idx in range(2):
+        for r_idx in range(2):
+            est_coord = Coordinates(
+                sofa_file=None,
+                positions=estimation[t_idx, r_idx, :].reshape(1, 3),
+                convention='cartesian',
+            )
+            est_sph = est_coord.sph()  # (1, 2) -> azimuth, elevation
+
+            az_err = abs(est_sph[0, 0] - true_dirs[t_idx, 0])
+            # Handle azimuth wraparound
+            az_err = min(az_err, 360 - az_err)
+            el_err = abs(est_sph[0, 1] - true_dirs[t_idx, 1])
+
+            angular_err = np.sqrt(az_err**2 + el_err**2)
+            if angular_err > tolerance_deg:
+                return False
+        
+
 def test_interp():
     """Test SHMAX interpolation produces valid template features."""
     sofa_file = get_sofa_file()

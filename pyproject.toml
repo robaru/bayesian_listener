@@ -39,7 +39,8 @@ dependencies = [
     'psutil',
     'spharpy',
     'spaudiopy',
-    'joblib'
+    'joblib',
+    'pybads'
 ]
 
 [project.optional-dependencies]

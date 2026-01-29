@@ -302,9 +302,9 @@ class BayesianListener:
     def infer(self,
               target = None,
               repetitions = 50,
-              seed = None,
               prior = 'horizontal',
-              store_posterior = False):
+              store_posterior = False,
+              seed = None):
         """Perform Bayesian inference to estimate sound source direction.
 
         Parameters
@@ -335,8 +335,8 @@ class BayesianListener:
             Otherwise: Estimated template indices of shape
             (targets :math:`\times` repetitions).
         """
-        rng = np.random.default_rng(seed)
 
+        rng = np.random.default_rng(seed)
 
         # prepare features
         # use original HRIR if no target is provided

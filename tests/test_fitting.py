@@ -1,0 +1,222 @@
+import pytest
+import numpy as np
+import pandas as pd
+from unittest.mock import patch, MagicMock
+
+from bayesian_listener.coordinates import Coordinates
+from bayesian_listener.fitting import (
+    fit_listener, loglik, sigma2kappa, kappa2sigma, allcomb,
+)
+
+from tests.test_bayesian_listener import get_sofa_file
+
+
+# ---------------------------------------------------------------------------
+# Unit tests for helper functions
+# ---------------------------------------------------------------------------
+
+def test_sigma2kappa_roundtrip():
+    """sigma2kappa and kappa2sigma should be inverses."""
+    for sigma in [0.1, 10.0, 20.0, 45.0]:
+        kappa = sigma2kappa(sigma)
+        sigma_back = kappa2sigma(kappa)
+        np.testing.assert_allclose(sigma_back, sigma, rtol=1e-10)
+
+
+def test_sigma2kappa_monotonic():
+    """Smaller sigma should give larger kappa."""
+    assert sigma2kappa(5) > sigma2kappa(10) > sigma2kappa(20)
+
+
+def test_allcomb():
+    """allcomb should return the Cartesian product."""
+    result = allcomb([1, 2], [3, 4])
+    expected = np.array([[1, 3], [1, 4], [2, 3], [2, 4]])
+    np.testing.assert_array_equal(result, expected)
+
+
+# ---------------------------------------------------------------------------
+# Fixture: model + synthetic data for loglik / fit_listener tests
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def fitting_data():
+    """Create minimal synthetic data for fit_listener."""
+    sofa_path = get_sofa_file()
+
+    # A few target directions (spherical: azi, ele, r=1) in degrees
+    target_dirs = np.array([
+        [0, 0, 1],
+        [45, 0, 1],
+        [0, 45, 1],
+    ])
+    targets_coords = Coordinates(
+        positions=target_dirs,
+        convention='spherical',
+        units='deg',
+    )
+
+    # Synthetic responses — small noise around the targets
+    rng = np.random.default_rng(42)
+    rows = []
+    for azi, ele, _ in target_dirs:
+        for _ in range(10):
+            rows.append({
+                'subject': 'test_subj',
+                'azi_target': azi,
+                'ele_target': ele,
+                'azi_response': azi + rng.normal(0, 3),
+                'ele_response': ele + rng.normal(0, 5),
+            })
+    obs_tbl = pd.DataFrame(rows)
+
+    return sofa_path, obs_tbl, targets_coords
+
+
+@pytest.fixture
+def model_and_arrays(fitting_data):
+    """Prepare BayesianListener model and arrays needed by loglik."""
+    from bayesian_listener import BayesianListener
+
+    sofa_path, obs_tbl, targets_coords = fitting_data
+
+    model = BayesianListener(sofa_path)
+    model.prepare_features(interpolation='SH')
+
+    target_indices = model.coords.find(targets_coords)[1]
+    targets = model.represent()[target_indices, :]
+
+    subj_data = obs_tbl[obs_tbl['subject'] == 'test_subj']
+    resp_coords = Coordinates(
+        positions=np.column_stack([
+            np.deg2rad(subj_data['azi_response'].values),
+            np.deg2rad(subj_data['ele_response'].values),
+            np.ones(len(subj_data)),
+        ]),
+        convention='spherical',
+    )
+    resp_cart = resp_coords.convert('cartesian')
+
+    resp_targets = Coordinates(
+        positions=np.column_stack([
+            np.deg2rad(subj_data['azi_target'].values),
+            np.deg2rad(subj_data['ele_target'].values),
+            np.ones(len(subj_data)),
+        ]),
+        convention='spherical',
+    )
+    resp_targets_idx = targets_coords.find(resp_targets)[1]
+
+    return model, targets, resp_cart, resp_targets_idx
+
+
+# ---------------------------------------------------------------------------
+# loglik tests
+# ---------------------------------------------------------------------------
+
+def test_loglik_returns_finite_scalar(model_and_arrays):
+    """loglik should return a finite positive scalar for moderate kappa."""
+    model, targets, resp_cart, resp_targets_idx = model_and_arrays
+
+    sigmas_log = np.log([2.0, 8.0, 15.0, 30.0])
+    nll = loglik(model, targets, resp_cart, resp_targets_idx, sigmas_log,
+                 num_repetitions=5)
+
+    assert np.isscalar(nll)
+    assert np.isfinite(nll)
+
+
+@pytest.mark.parametrize("kappa", [
+    1.0,            # low concentration (broad motor noise)
+    50.0,           # moderate
+    500.0,          # boundary of sinh overflow
+    1000.0,         # well into large-kappa regime
+    sigma2kappa(1), # ~6565, extreme precision
+])
+def test_loglik_finite_across_kappa_range(model_and_arrays, kappa):
+    """loglik must stay finite for kappa values spanning the full bound range."""
+    model, targets, resp_cart, resp_targets_idx = model_and_arrays
+
+    sigmas_log = np.log([2.0, 8.0, kappa, 30.0])
+    nll = loglik(model, targets, resp_cart, resp_targets_idx, sigmas_log,
+                 num_repetitions=5)
+
+    assert np.isfinite(nll), f"NaN/Inf for kappa={kappa}"
+
+
+# ---------------------------------------------------------------------------
+# fit_listener tests (mocked BADS)
+# ---------------------------------------------------------------------------
+
+def test_fit_listener_smoke(fitting_data):
+    """Run fit_listener end-to-end with mocked BADS (no real optimisation)."""
+    sofa_path, obs_tbl, targets_coords = fitting_data
+
+    mock_bads_instance = MagicMock()
+    mock_bads_instance.optimize.return_value = {
+        'x': np.log([2.0, 8.0, 15.0, 30.0]),
+        'fval': 1234.5,
+    }
+
+    with patch('bayesian_listener.fitting.BADS', return_value=mock_bads_instance):
+        result = fit_listener(
+            sofa_path=sofa_path,
+            obs_tbl=obs_tbl,
+            targets_coords=targets_coords,
+            interpolation_method='SH',
+            subject_id='test_subj',
+            num_repetitions=5,
+            num_grid_points=1,
+            verbose=True,
+        )
+
+    assert result['success'] is True
+    assert result['subject'] == 'test_subj'
+    assert result['method'] == 'SH'
+    for key in ('sigma_ild', 'sigma_spectral', 'sigma_motor', 'sigma_prior', 'sdL'):
+        assert key in result
+    assert result['nll'] == 1234.5
+    mock_bads_instance.optimize.assert_called_once()
+
+
+def test_fit_listener_bounds_ordering(fitting_data):
+    """Verify BADS is called with strictly ordered bounds (lb < plb < pub < ub)."""
+    sofa_path, obs_tbl, targets_coords = fitting_data
+
+    captured_args = {}
+
+    def capture_bads(fun, x0, lb, ub, plb, pub, **kwargs):
+        captured_args['lb'] = lb
+        captured_args['plb'] = plb
+        captured_args['pub'] = pub
+        captured_args['ub'] = ub
+        mock = MagicMock()
+        mock.optimize.return_value = {
+            'x': np.log([2.0, 8.0, 15.0, 30.0]),
+            'fval': 1000.0,
+        }
+        return mock
+
+    with patch('bayesian_listener.fitting.BADS', side_effect=capture_bads):
+        result = fit_listener(
+            sofa_path=sofa_path,
+            obs_tbl=obs_tbl,
+            targets_coords=targets_coords,
+            interpolation_method='SH',
+            subject_id='test_subj',
+            num_repetitions=5,
+            num_grid_points=1,
+            verbose=False,
+        )
+
+    assert result['success'] is True
+
+    lb = captured_args['lb']
+    plb = captured_args['plb']
+    pub = captured_args['pub']
+    ub = captured_args['ub']
+
+    for i in range(len(lb)):
+        assert lb[i] < plb[i], f"dim {i}: lb ({lb[i]}) >= plb ({plb[i]})"
+        assert plb[i] < pub[i], f"dim {i}: plb ({plb[i]}) >= pub ({pub[i]})"
+        assert pub[i] < ub[i], f"dim {i}: pub ({pub[i]}) >= ub ({ub[i]})"

@@ -239,6 +239,37 @@ def wrap_polar_angle(angle_rad):
 
 # -----------------------------------------------------------------------------
 # Metric Functions
+@register_metric(
+    name="sdL",
+    coord_convention="horizontal-polar",
+    input_unit="radians",
+    output_unit="radians",
+    description=(
+        "Lateral RMS error (in radians).\n\t"
+        "RMS of the difference between response and target lateral angles\n\t"
+        "within ±60° lateral.\n\t"
+        "See rms lateral error in Middlebrooks (1999)"),
+    ylabel="Lateral RMS error (rad)",
+)
+def sdL(true, est):
+    """
+    Compute lateral RMS error within ±60° lateral.
+    More details in the decorator above.
+    """
+    # lateral in [-π, π), then restrict to [-π/2, π/2]
+    lat_true = wrap_to_pi(true[..., 0])
+    lat_true = np.clip(lat_true, -np.pi/2, np.pi/2) # enforce [-π/2, π/2]
+
+    lat_est = wrap_to_pi(est[..., 0])
+    lat_est = np.clip(lat_est, -np.pi/2, np.pi/2)
+
+    mask = np.abs(lat_est) <= np.deg2rad(80)
+    if not np.any(mask):
+        return np.nan
+
+    diff = wrap_to_pi(lat_est - lat_true)[mask]
+    return np.sqrt(np.var(diff))
+
 
 @register_metric(
     name="rmsL",

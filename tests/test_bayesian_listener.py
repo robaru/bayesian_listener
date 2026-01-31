@@ -5,6 +5,7 @@ from pathlib import Path
 import urllib.request
 from bayesian_listener import BayesianListener
 from bayesian_listener.coordinates import Coordinates
+from bayesian_listener.utils import save_to_cache, load_from_cache
 
 
 def get_sofa_file():
@@ -18,11 +19,12 @@ def get_sofa_file():
     data_dir = repo_root / 'data'
     data_dir.mkdir(exist_ok=True)
 
-    sofa_path = data_dir / 'P0001_FreeFieldCompMinPhase_48kHz.sofa'
+    sofa_file =  'P0001_FreeFieldCompMinPhase_48kHz.sofa'
+    sofa_path = data_dir / sofa_file
 
     if not sofa_path.exists():
         # Try to download the file
-        url = 'https://transfer.ic.ac.uk:9090/2022_SONICOM-HRTF-DATASET/P0001/HRTF/HRTF/48kHz/P0001_FreeFieldCompMinPhase_48kHz.sofa'
+        url = 'https://transfer.ic.ac.uk:9090/2022_SONICOM-HRTF-DATASET/P0001/HRTF/HRTF/48kHz/' + sofa_file
         try:
             print(f"\nDownloading {sofa_path.name}...")
             print(f"From: {url}")
@@ -240,3 +242,25 @@ def test_interp():
         "Template max should not be significantly above original max"
 
 
+def test_load_cached_data():
+    """Test that data can be saved to and loaded from the cache using P0001."""
+    sofa_file = get_sofa_file()
+
+    # Get path to repo root (parent of model directory)
+    repo_root = Path(__file__).parent.parent
+    cache_dir = repo_root / 'data' / 'preprocessed'
+
+    # Collect the attributes the model normally caches
+    cache_attributes = [
+        'itd', 'ild', 'freqs', 'spectral_cues',
+        'coords', 'parameters', 'template',
+    ]
+
+    # Load back from cache
+    loaded = load_from_cache(
+        cache_dir, sofa_file,
+        attributes_to_restore=cache_attributes,
+        interpolation='SH',
+    )
+
+    assert loaded is not None

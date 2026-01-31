@@ -159,7 +159,7 @@ def fit_listener(sofa_path, obs_tbl, targets_coords,
     try:
         # Get subject data
         if subject_id is not None:
-            subj_data = obs_tbl[obs_tbl['subject'] == subject_id]
+            subj_data = obs_tbl[obs_tbl['participant'] == subject_id]
         else:
             subj_data = obs_tbl
         if verbose:

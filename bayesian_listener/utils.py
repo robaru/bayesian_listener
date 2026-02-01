@@ -228,7 +228,7 @@ def itdestimator(signals, fs=None):
 # SPHERICAL UTILITIES
 # -----------------------------------
 
-def scatter_von_mises(dirs, sigma_m):
+def scatter_von_mises(dirs, sigma_m, seed=None):
     assert dirs.shape[1] == 3 or dirs.size == 3
     assert sigma_m >= 5, \
         'sensorimotor concentration too small and can lead to complex values'
@@ -244,14 +244,14 @@ def scatter_von_mises(dirs, sigma_m):
 
     if dirs.ndim > 1:
         for i in range(dirs.shape[0]):
-            dirs_new[i, :] = randvmf(kappa, dirs[i, :])
+            dirs_new[i, :] = randvmf(kappa, dirs[i, :], seed=seed)
     else:
-        dirs_new = randvmf(kappa, dirs)
+        dirs_new = randvmf(kappa, dirs, seed=seed)
 
     return dirs_new
 
 def randvmf(kappa, mu, seed = None):
-    np.random.seed(seed)
+    rng = np.random.default_rng(seed)
 
 
     assert mu is not None
@@ -266,11 +266,11 @@ def randvmf(kappa, mu, seed = None):
     # Rubinstein 81, p.39, Fisher 87, p.59
     kappaS = np.sign(kappa)
     kappa = abs(kappa)
-    U = np.random.rand()
+    U = rng.random()
     x = np.log(2. * U * np.sinh(kappa) + np.exp(-kappa)) / kappa
     x = kappaS * x
 
-    psi = 2. * np.pi * np.random.rand()
+    psi = 2. * np.pi * rng.random()
     s_x = np.sqrt(1. - x**2.)
     y = np.array([np.cos(psi) * s_x, np.sin(psi) * s_x, x])
 

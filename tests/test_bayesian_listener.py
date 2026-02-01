@@ -35,8 +35,8 @@ def get_sofa_file():
 
 def test_model_single():
     """Test single target inference with fixed random seed for reproducibility."""
-    # Set random seed for reproducibility (for both infer and estimate)
-    np.random.seed(42)
+
+    seed = 42
 
     # Load SOFA file
     sofa_file = get_sofa_file()
@@ -50,9 +50,9 @@ def test_model_single():
     target = targets[260, :]
 
     # Estimate position with fixed seed
-    posterior = am.infer(target, repetitions=1, seed=42)
+    posterior = am.infer(target, repetitions=1, seed=seed)
     # Disable motor noise for deterministic test
-    estimation = am.estimate(posterior, sigma_motor=0)
+    estimation = am.estimate(posterior, sigma_motor=0, seed=seed)
 
     # Get original and estimated directions in spherical coordinates
     estimated_coords = Coordinates(
@@ -67,7 +67,9 @@ def test_model_single():
     assert np.allclose(np.linalg.norm(estimation[0, 0, :]), 1.0, atol=0.1)
 
     # Compare with fixed expected spherical coordinates (azimuth, elevation)
-    expected_dir_sph = np.array([[126.58887 ,  -9.108036]])
+    # With the old random generator: [126.58887 ,  -9.108036]
+    expected_dir_sph = np.array([[126.871232,   0.966419]])
+    
     np.testing.assert_allclose(estimated_dir, expected_dir_sph, rtol=1e-2)
 
 def test_interp():

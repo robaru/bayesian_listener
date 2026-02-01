@@ -1,7 +1,6 @@
 import sofar
 import numpy as np
 import matplotlib.pyplot as plt
-from bayesian_listener import metrics as mt
 import warnings
 
 class Coordinates:
@@ -339,82 +338,6 @@ class Coordinates:
             for item in row:
                 print(f"{item:2}", end=" ")  # Format with width 2
             print()  # New line after each row
-
-
-    def localization_error(self, estimations, metric, auxiliary_output=False):
-        """
-        Compute the localization error between the current coordinates
-        and the provided estimations using the specified metric.
-
-        Parameters
-        ----------
-        estimations : Coordinates
-            The estimated coordinates to compare against.
-        metric : str or callable
-            The metric to use for error computation.
-            If a string, it should be a registered metric name.
-            If callable, it should be a function that takes two
-            Coordinates instances and returns the error value.
-        auxiliary_output : bool, optional
-            If True, return auxiliary output from the metric function.
-            Default is False.
-
-        Returns
-        -------
-        float or tuple :
-            The computed localization error.
-            If auxiliary_output is True, returns a tuple
-            (error_value, auxiliary_data).
-        """
-        if not isinstance(estimations, Coordinates):
-            raise ValueError(
-                "estimations must be an instance of Coordinates class")
-        if self.positions.shape != estimations.positions.shape:
-            raise ValueError("Shape mismatch")
-
-        # Case 1: metric is a custom function
-        if callable(metric):
-            return metric(self.positions, estimations.positions)
-
-        # Case 2: metric is a string, but not registered in METRIC_FUNCTIONS
-        if metric not in mt.METRIC_FUNCTIONS:
-            raise ValueError(
-                f"Unknown metric: {metric}. Available metrics are: "
-                f"{list(mt.METRIC_FUNCTIONS.keys())}")
-
-        # Case 3: metric is a string and registered in METRIC_FUNCTIONS
-        expected_coord_convention = \
-            mt.get_metric_metadata(metric)['coord_convention']
-        expected_unit = mt.get_metric_metadata(metric)['input_unit']
-
-        # Convert both self and estimations
-        # to the expected coordinate convention
-        converted_self = self.convert(expected_coord_convention)
-        converted_estim = estimations.convert(expected_coord_convention)
-
-        # TODO: Evaluate the unit if necessary
-
-        value, aux_out = \
-            mt.METRIC_FUNCTIONS[metric](converted_self, converted_estim)
-
-        return (value, aux_out) if auxiliary_output else value
-
-
-    @staticmethod
-    def help_on_metric(name=None):
-        """
-        Print help information about a specific metric
-        or list all available metrics if no name is provided.
-        """
-        mt.describe_metrics(name)
-
-    @staticmethod
-    def get_metric_metadata(name):
-        """
-        Get metadata for a specific metric.
-        """
-        return mt.get_metric_metadata(name)
-
 
     @staticmethod
     def _wrap_angles(positions, coord_convention ):

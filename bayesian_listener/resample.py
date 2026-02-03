@@ -27,9 +27,9 @@ def resample_barumerli2023(values,
         Single cue array of shape (n_dirs, ...) or list of cue arrays.
         If list, each array must have shape (n_dirs, ...)
         where first dimension matches.
-    coords_in : Coordinates
+    coords_in : pyfar.Coordinates
         Source coordinates
-    dirs : array or Coordinates, optional
+    dirs : array, optional
         Target directions. If None, uses t-design with 64 points
     flag_regularisation : bool
         Whether to use Tikhonov regularization
@@ -38,7 +38,7 @@ def resample_barumerli2023(values,
     -------
     values_out : array or list of arrays
         Resampled cues. Returns same type (single array or list) as input.
-    coords_out : Coordinates
+    coords_out : pyfar.Coordinates
         Output coordinates
     """
     N_sph = 15
@@ -50,6 +50,10 @@ def resample_barumerli2023(values,
     else:
         cues = [values]
         passed_list = False
+
+    # Check if coordinates is a pf.Coordinates object
+    if not isinstance(coords_in, pf.Coordinates):
+        raise TypeError('`coordinates` must be a pyfar.Coordinates object')
 
     if dirs is None:
         # %% Generate t-design points
@@ -65,7 +69,7 @@ def resample_barumerli2023(values,
     dirs_SH = np.transpose([dirs_sph[0], dirs_sph[1]])
 
     # transform signal to SH domain
-    c = coords_in.convert('spherical')
+    c = coords_in.spherical_elevation
     dirs_original = c[:, (0, 1)]
 
     # move to navigation coordinates
@@ -111,7 +115,9 @@ def resample_barumerli2023(values,
     # dirs = dirs[idx, :]
     # cues_out = [c[idx,:] for c in cues_out]
 
-    coords_out = Coordinates(positions = dirs, convention = 'cartesian')
+    coords_out = pf.Coordinates.from_cartesian(dirs[:, 0],
+                                               dirs[:, 1],
+                                               dirs[:, 2])
 
     # Return in same format as input
     if not passed_list:
@@ -209,15 +215,15 @@ def resample_old(values, coords_in, dirs = None, plot_grid=False):
         # the advantage of using this is that
         # the weights are equal when integrating
         dirs = spaudiopy.grids.load_n_design(64)# 2112 equally distant points
-    else:
-        assert(isinstance(dirs, Coordinates))
-        dirs = dirs.convert('cartesian')
+    elif isinstance(dirs, pf.Coordinates):
+        dirs_cart = dirs.cartesian
 
-    dirs_sph = spaudiopy.utils.cart2dir(dirs[:, 0], dirs[:, 1], dirs[:, 2])
+    dirs_sph = spaudiopy.utils.cart2dir(dirs_cart[:, 0], dirs_cart[:, 1],
+                                        dirs_cart[:, 2])
     dirs_SH = np.transpose([dirs_sph[0], dirs_sph[1]])
 
     # transform signal to SH domain
-    c = coords_in.convert('spherical')
+    c = coords_in.spherical_elevation
     dirs_original = c[:, (0, 1)]
 
     # move to navigation coordinates
@@ -347,7 +353,7 @@ def resample_two_step(cues, coordinates, template, second_step):
     cues : array, list of arrays
         Cues as an array or list of arrays. For each array, ``shape[-2]`` must
         equal the number of source positions in `coordinates`.
-    coordinates : pyfar.Coordinates or Coordinates
+    coordinates : pyfar.Coordinates
         Coordinates of the cues
     template : pyfar.Coordinates or numpy array
         Coordinates to which the cues are interpolated
@@ -368,12 +374,9 @@ def resample_two_step(cues, coordinates, template, second_step):
     else:
         passed_list = True
 
-    # Convert custom Coordinates to pyfar.Coordinates if needed
-    if isinstance(coordinates, Coordinates):
-        coords_cart = coordinates.convert('cartesian')
-        coordinates = pf.Coordinates.from_cartesian(coords_cart[:, 0],
-                                                    coords_cart[:, 1],
-                                                    coords_cart[:, 2])
+    # Check if coordinates is a pf.Coordinates object
+    if not isinstance(coordinates, pf.Coordinates):
+        raise TypeError('`coordinates` must be a pyfar.Coordinates object')
 
     # Convert template to pyfar.Coordinates if it's a numpy array
     if isinstance(template, np.ndarray):
@@ -469,7 +472,7 @@ def resample(cues, coordinates, method='SH'):
         Single cue array of shape (n_dirs, ...) or list of cue arrays.
         If list, each array must have shape (n_dirs, ...)
         where first dimension matches.
-    coordinates : Coordinates
+    coordinates : pf.Coordinates
         Source coordinates
     method : str
         Resampling method: 'SH', 'barycentric', or 'barumerli2023'
@@ -487,16 +490,25 @@ def resample(cues, coordinates, method='SH'):
 
     if method.lower() == 'barycentric':
         result = resample_two_step(cues, coordinates, template, 'barycentric')
-        template_coords = Coordinates(positions=template,
-                                      convention='cartesian')
+        template_coords = pf.Coordinates.from_cartesian(
+            template[:, 0],
+            template[:, 1],
+            template[:, 2]
+        )
     elif method.lower() == 'sh':
         result = resample_two_step(cues, coordinates, template, 'sh')
-        template_coords = Coordinates(positions=template,
-                                      convention='cartesian')
+        template_coords = pf.Coordinates.from_cartesian(
+            template[:, 0],
+            template[:, 1],
+            template[:, 2]
+        )
     elif method.lower() == 'shmax':
         result = resample_two_step(cues, coordinates, template, 'shmax')
-        template_coords = Coordinates(positions=template,
-                                      convention='cartesian')
+        template_coords = pf.Coordinates.from_cartesian(
+            template[:, 0],
+            template[:, 1],
+            template[:, 2]
+        )
     elif method.lower() == 'barumerli2023':
         result, template_coords = resample_barumerli2023(cues,
                                                          coordinates,

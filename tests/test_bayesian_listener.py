@@ -1,5 +1,6 @@
 import pytest
 import numpy as np
+import pyfar as pf
 from pathlib import Path
 import urllib.request
 from bayesian_listener import BayesianListener
@@ -55,12 +56,12 @@ def test_model_single():
     estimation = am.estimate(posterior, sigma_motor=0)
 
     # Get original and estimated directions in spherical coordinates
-    estimated_coords = Coordinates(
-        sofa_file=None,
-        positions=estimation[:, 0, :],
-        convention='cartesian'
-    )
-    estimated_dir = estimated_coords.sph()
+    estimated_coords = pf.Coordinates.from_cartesian(
+        estimation[:, 0, 0],
+        estimation[:, 0, 1],
+        estimation[:, 0, 2])
+    estimated_dir = np.rad2deg(estimated_coords.spherical_elevation[..., 0:2])
+
 
     # Verify shape
     assert estimation.shape == (1, 1, 3)

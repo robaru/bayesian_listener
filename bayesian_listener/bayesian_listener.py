@@ -3,6 +3,7 @@ The following describes the BayesianListener, which is the core auditory model.
 """
 import sofar
 import numpy as np
+import pyfar as pf
 import matplotlib.pyplot as plt
 from scipy.signal import lfilter
 from scipy.special import logsumexp
@@ -27,7 +28,8 @@ class BayesianListener:
 
         self.hrir = self.sofa_data.Data_IR
         self.fs = int(self.sofa_data.Data_SamplingRate)
-        self.coords = Coordinates(sofa_file = sofa)
+        self.coords = pf.io.read_sofa(self.sofa_file)[1]
+
         # noise parameters
         self.parameters = {
             "sigma_itd": 0.569,
@@ -112,7 +114,8 @@ class BayesianListener:
                           spectral_range = [7e2, 18e3],
                           interpolation='SH'):
         # normalize hrirs to frontal position
-        _, idx = self.coords.find(Coordinates(positions=np.array([1, 0, 0])))
+        coords2find = pf.Coordinates.from_cartesian(1, 0, 0)
+        idx, _ = self.coords.find_nearest(coords2find)
         hrirs_temp = self.hrir / np.max(np.abs(self.hrir[idx]))
 
         a = 32.5e-6
@@ -305,7 +308,7 @@ class BayesianListener:
             elif prior == 'horizontal':
                 # Horizontal bias prior:
                 # Gaussian centered on horizontal plane (elevation = 0°)
-                sph = self.template.coords.convert('spherical')
+                sph = self.template.coords.spherical_elevation
                 prior = np.exp(
                     -0.5 * (np.rad2deg(sph[:, 1]) / sigmas["sigma_prior"])**2,
                     )
@@ -419,7 +422,7 @@ class BayesianListener:
 
         assert(trials > 0)
         estimations = np.zeros((trials, repetitions, 3))
-        coords_temp = self.template.coords.convert('cartesian')
+        coords_temp = self.template.coords.cartesian
         for t in range(trials):
             for r in range(repetitions):
                 # Decision stage
@@ -487,6 +490,10 @@ class BayesianListener:
         self.template.coords.plot(np.maximum(amps,
                                              np.log(np.finfo(amps.dtype).eps)),
                                              estimations.squeeze())
+        self.template.coords.show(
+            estimations.squeeze(),
+            color=np.maximum(amps, np.log(np.finfo(amps.dtype).eps)),
+            )
 
 
 

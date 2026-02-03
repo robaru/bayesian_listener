@@ -6,77 +6,87 @@ import numpy as np
 
 
 def localization_error(targets, estimations, metric, auxiliary_output=False):
-        """
-        Compute the localization error between two sets of coordinates
-        using the specified metric.
+    """
+    Compute the localization error between two sets of coordinates
+    using the specified metric.
 
-        Parameters
-        ----------
-        targets : Coordinates or np.ndarray
-            The target coordinates.
-        estimations : Coordinates or np.ndarray
-            The estimated coordinates to compare against.
-        metric : str or callable
-            The metric to use for error computation.
-            If a string, it should be a registered metric name.
-            If callable, it should be a function that takes two
-            Coordinates instances and returns the error value.
-        auxiliary_output : bool, optional
-            If True, return auxiliary output from the metric function.
-            Default is False.
+    Parameters
+    ----------
+    targets : Coordinates or np.ndarray
+        The target coordinates.
+    estimations : Coordinates or np.ndarray
+        The estimated coordinates to compare against.
+    metric : str or callable
+        The metric to use for error computation.
+        If a string, it should be a registered metric name.
+        If callable, it should be a function that takes two
+        np.ndarray arguments (targets and estimations) and
+        returns a float or a tuple (float, dict).
+    auxiliary_output : bool, optional
+        If True, return auxiliary output from the metric function.
+        Default is False.
 
-        Returns
-        -------
-        float or tuple :
-            The computed localization error.
-            If auxiliary_output is True, returns a tuple
-            (error_value, auxiliary_data).
-        """
-        # Accept both Coordinates and arrays; if Coordinates, get .positions
-        if hasattr(targets, "positions"):
-            x_tar = targets.positions
-        else:
-            x_tar = targets
-        if hasattr(estimations, "positions"):
-            x_est = estimations.positions
-        else:
-            x_est = estimations
+    Returns
+    -------
+    float or tuple :
+        The computed localization error.
+        If auxiliary_output is True, returns a tuple
+        (error_value, auxiliary_data).
+    """
+    # Accept both Coordinates and arrays; if Coordinates, get .positions
+    if hasattr(targets, "positions"):
+        x_tar = targets.positions
+    else:
+        x_tar = targets
+    if hasattr(estimations, "positions"):
+        x_est = estimations.positions
+    else:
+        x_est = estimations
 
-        if x_tar.shape != x_est.shape:
-            raise ValueError(f"Shape mismatch: {x_tar.shape} vs {x_est.shape}")
+    if x_tar.shape != x_est.shape:
+        raise ValueError(f"Shape mismatch: {x_tar.shape} vs {x_est.shape}")
 
-        # Case 1: metric is a custom function
-        if callable(metric):
-            return metric(x_tar, x_est)
+    # Case 1: metric is a custom function
+    if callable(metric):
+        return metric(x_tar, x_est)
 
-        # Case 2: metric is a string, but not registered in METRIC_FUNCTIONS
-        if metric not in METRIC_FUNCTIONS:
-            raise ValueError(
-                f"Unknown metric: {metric}. Available metrics are: "
-                f"{list(METRIC_FUNCTIONS.keys())}")
+    # Case 2: metric is a string, but not registered in METRIC_FUNCTIONS
+    if metric not in METRIC_FUNCTIONS:
+        raise ValueError(
+            f"Unknown metric: {metric}. Available metrics are: "
+            f"{list(METRIC_FUNCTIONS.keys())}")
 
-        # Case 3: metric is a string and registered in METRIC_FUNCTIONS
-        expected_coord_convention = \
-            get_metric_metadata(metric)['coord_convention']
-        expected_unit = get_metric_metadata(metric)['input_unit']
+    # Case 3: metric is a string and registered in METRIC_FUNCTIONS
+    expected_coord_convention = \
+        get_metric_metadata(metric)['coord_convention']
+    expected_unit = get_metric_metadata(metric)['input_unit']
 
-        # If Coordinates instances, convert both
-        # to the expected coordinate convention
-        if hasattr(targets, "convert") and \
-           hasattr(estimations, "convert"):
-            converted_tar = targets.convert(expected_coord_convention)
-            converted_est = estimations.convert(expected_coord_convention)
-        else:
-            # If raw arrays, assume they are already in the expected convention
-            converted_tar = x_tar
-            converted_est = x_est
+    # If Coordinates instances, convert both
+    # to the expected coordinate convention
+    has_tar_convert = hasattr(targets, "convert")
+    has_est_convert = hasattr(estimations, "convert")
+    if has_tar_convert and has_est_convert:
+        converted_tar = targets.convert(expected_coord_convention)
+        converted_est = estimations.convert(expected_coord_convention)
+    elif not has_tar_convert and not has_est_convert:
+        # If raw arrays, assume they are already in the expected convention
+        converted_tar = x_tar
+        converted_est = x_est
+    else:
+        # Mixed types (one Coordinates, one array) are ambiguous and may
+        # lead to incorrect coordinate conventions; require consistency.
+        raise TypeError(
+            "Inconsistent input types: 'targets' and 'estimations' must "
+            "both be Coordinates instances or both be array-like when "
+            "using string metrics."
+        )
 
-        # TODO: Evaluate the unit if necessary
+    # TODO: Evaluate the unit if necessary
 
-        value, aux_out = \
-            METRIC_FUNCTIONS[metric](converted_tar, converted_est)
+    value, aux_out = \
+        METRIC_FUNCTIONS[metric](converted_tar, converted_est)
 
-        return (value, aux_out) if auxiliary_output else value
+    return (value, aux_out) if auxiliary_output else value
 
 
 

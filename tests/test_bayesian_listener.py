@@ -70,6 +70,7 @@ def test_model_single():
     expected_dir_sph = np.array([[126.871232,   0.966419]])
     np.testing.assert_allclose(estimated_dir.squeeze(), expected_dir_sph.squeeze(), rtol=1e-2)
 
+
 def test_model_multiple():
     """Test inference with two targets and two repetitions.
 
@@ -132,7 +133,7 @@ def test_model_multiple():
             angular_err = np.sqrt(az_err**2 + el_err**2)
             if angular_err > tolerance_deg:
                 return False
-        
+
 
 def test_interp():
     """Test SHMAX interpolation produces valid template features."""

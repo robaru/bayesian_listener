@@ -31,7 +31,7 @@ def resample_barumerli2023(values,
         Source coordinates
     template : pyfar.Coordinates or `None`, optional
         Coordinates to which the cues are interpolated to. If `None` (default),
-        uses t-design of 64th degree.
+        uses spherical n-design of 64th degree.
     flag_regularisation : bool
         Whether to use Tikhonov regularization
 
@@ -365,7 +365,7 @@ def resample_two_step(cues, coordinates, template, second_step):
         Coordinates of the cues
     template : pyfar.Coordinates or `None`, optional
         Coordinates to which the cues are interpolated to. If `None` (default),
-        uses t-design of 64th degree.
+        uses spherical n-design of 64th degree.
     second_step : string
         'SH' or 'Barycentric' (case insensitive)
 
@@ -495,7 +495,7 @@ def resample(cues, coordinates, template=None, method='SH'):
         Source coordinates
     termplate : pyfar.Coordinates or `None`, optional
         Coordinates to which the cues are interpolated to. If `None` (default),
-        uses 64th order t-design for methods 'SH', 'barycentric', and
+        uses 64th degree spherical n-design for methods 'SH', 'barycentric', and
         'barumerli2023'.
     method : str
         Resampling method: 'SH', 'barycentric', or 'barumerli2023'

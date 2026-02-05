@@ -1,6 +1,4 @@
-"""
-The following describes the BayesianListener, which is the core auditory model.
-"""
+"""BayesianListener module: core auditory model for sound localisation."""
 import sofar
 import numpy as np
 import pyfar as pf
@@ -14,7 +12,16 @@ from joblib import Parallel, delayed
 from pathlib import Path
 
 class BayesianListener:
+    """Bayesian model of human sound localisation using HRTF-derived cues."""
+
     def __init__(self, sofa):
+        """Initialize listener from SOFA file or object.
+
+        Parameters
+        ----------
+        sofa : str or sofar.Sofa
+            Path to SOFA file or pre-loaded Sofa object.
+        """
         # handle sofa input
         if isinstance(sofa, str):
             self.sofa_file = sofa
@@ -59,9 +66,26 @@ class BayesianListener:
                 raise ValueError(f"Missing parameter: {key}")
         self._parameters = value
 
-    # interpolate to a "uniform" spherical grid
-    # coz usually HRTF do not have a uniform grid
     def interpolate(self, interpolation='SH'):
+        """Resample cues to a uniform spherical grid for internal templates.
+
+        Templates are used during inference to compare against target features.
+        This resampling ensures a consistent spatial resolution.
+
+        Parameters
+        ----------
+        interpolation : {'SH', 'SHmax', 'barycentric', 'barumerli2023'}, default='SH'
+            Interpolation method:
+            - 'SH': Spherical harmonics interpolation with SH truncation.
+            - 'SHmax': Spherical harmonics with high SH order.
+            - 'barycentric': Barycentric interpolation on triangulated mesh.
+            - 'barumerli2023': Method from Barumerli et al. (2023).
+
+        Returns
+        -------
+        BayesianListener
+            New instance with resampled cues on uniform grid.
+        """
         # Create empty instance
         model = BayesianListener.__new__(BayesianListener)
 
@@ -98,11 +122,7 @@ class BayesianListener:
                          interpolation_grid=None,
                          use_cache=True,
                          force_recompute=False):
-        """
-        delegates to cached or direct computation of spatial features and
-        templates.
-        """
-        self.interpolation_grid = interpolation_grid
+        """Compute spatial features and templates, with optional caching."""
         assert(self.sofa_file is not None)
 
         if use_cache:
@@ -112,10 +132,18 @@ class BayesianListener:
         else:
             return self._compute_features(spectral_range, interpolation)
 
-    # pre-compute features for faster inference
     def _compute_features(self,
                           spectral_range = [7e2, 18e3],
                           interpolation='SH'):
+        """Compute ITD, ILD, and spectral cues from HRIRs.
+
+        Parameters
+        ----------
+        spectral_range : list, default=[7e2, 18e3]
+            Frequency range [low, high] in Hz for spectral analysis.
+        interpolation : str, default='SH'
+            Method for template interpolation.
+        """
         # normalize hrirs to frontal position
         coords2find = pf.Coordinates.from_cartesian(1, 0, 0)
         idx, _ = self.coords.find_nearest(coords2find)
@@ -193,16 +221,14 @@ class BayesianListener:
                                   spectral_range=[7e2, 18e3],
                                   interpolation='SH',
                                   force_recompute=False):
-        """
-        Preprocess with caching: load from cache if available,
-        otherwise compute and save.
+        """Load features from cache or compute and save them.
 
         Parameters
         ----------
         spectral_range : list
             Frequency range for spectral cues [low, high] in Hz
         interpolation : str
-            Interpolation method to use (e.g., 'SH', 'barumerli2023')
+            Interpolation method to use (e.g., 'SH', 'barycentric')
         force_recompute : bool
             If True, ignores cache and recomputes (but still saves to cache)
 
@@ -255,6 +281,13 @@ class BayesianListener:
         # return internal representation
 
     def represent(self):
+        """Return concatenated feature vector [ITD, ILD, spectral_L, spectral_R].
+
+        Returns
+        -------
+        ndarray
+            Feature matrix of shape (n_directions, n_features).
+        """
         bcue = np.hstack([self.itd,
                           self.ild])
 
@@ -270,6 +303,36 @@ class BayesianListener:
               seed = None,
               prior = 'horizontal',
               store_posterior = False):
+        """Perform Bayesian inference to estimate sound source direction.
+
+        Parameters
+        ----------
+        target : array-like, optional
+            Target spatial features to localise
+            (if None, uses features from listener's own HRIR).
+        repetitions : int, default=50
+            Number of Monte Carlo samples
+            (i.e. number of repetitions for each target).
+        seed : int, optional
+            Random seed for reproducibility.
+        prior : {'uniform', 'horizontal'} or ndarray, default='horizontal'
+            Prior distribution over directions. 'horizontal' biases toward
+            the horizontal plane; 'uniform' weights all directions equally.
+            User can provide custom prior as ndarray (templates :math:`\times` 1).
+        store_posterior : bool, default=False
+            If True, returns full log-posterior
+            (warning: this increase memory usage);
+            otherwise returns indices of maximum a posteriori estimates
+            (see :py:meth:`~estimate` for details).
+
+        Returns
+        -------
+        ndarray
+            If ``store_posterior=True``: log-posteriors of shape
+            (targets :math:`\times` repetitions :math:`\times` templates).
+            Otherwise: Estimated template indices of shape
+            (targets :math:`\times` repetitions).
+        """
         rng = np.random.default_rng(seed)
 
 
@@ -422,8 +485,9 @@ class BayesianListener:
         Parameters
         ----------
         posterior : ndarray
-            Either full posterior (trials × repetitions × templates)
-            OR argmax indices (trials × repetitions) if computed with store_posterior=False
+            Either full posterior (trials :math:`\times` repetitions :math:`\times` templates)
+            OR argmax indices (trials :math:`\times` repetitions)
+            if computed with ``store_posterior=False`` (see :py:meth:`~infer` for details)
         sigma_motor : float or None, optional
             Motor noise standard deviation in degrees.
             If None, uses self.parameters['sigma_motor'].
@@ -435,7 +499,7 @@ class BayesianListener:
         -------
         estimations : ndarray
             Estimated directions in Cartesian coordinates
-            (trials x repetitions x 3)
+            (trials :math:`\times` repetitions :math:`\times` 3)
         """
         repetitions = np.size(posterior, 1)
         trials = np.size(posterior, 0)
@@ -469,6 +533,23 @@ class BayesianListener:
                                              estimations[..., 2])
 
     def plot_cues(self, title='', fig=None, ax=None, clim=None, elev_min=None):
+        """Plot spectral cues on the median plane.
+
+        Parameters
+        ----------
+        title : str, optional
+            Additional title text.
+        fig, ax : matplotlib objects, optional
+            Existing figure/axes to plot on.
+        clim : tuple, optional
+            Color limits (min, max) for intensity.
+        elev_min : float, optional
+            Minimum elevation to display.
+
+        Returns
+        -------
+        fig, ax : matplotlib objects
+        """
         side = 0 # left/right channel
         dirs = self.coords.spherical_elevation
         dirs[:, 0:2] = np.rad2deg(dirs[:, 0:2])
@@ -516,6 +597,7 @@ class BayesianListener:
         return fig, ax
 
     def plot_post(self, posterior, estimations):
+        """Plot posterior distribution with estimated direction overlay."""
         amps = posterior.squeeze()
 
         ax = self.template.coords.show(

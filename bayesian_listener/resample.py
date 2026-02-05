@@ -39,7 +39,7 @@ def resample_barumerli2023(values,
     -------
     values_out : array or list of arrays
         Resampled cues. Returns same type (single array or list) as input.
-    template : pyfar.Coordinates
+    template_coords : pyfar.Coordinates
         Output coordinates of resampled cues.
     """
     N_sph = 15
@@ -374,7 +374,7 @@ def resample_two_step(cues, coordinates, template, second_step):
     cues : array, list of arrays
         Resampled cues. For each array, ``shape[-2]`` equal the number of
         source positions in `template`.
-    template : pyfar.Coordinates
+    template_coords : pyfar.Coordinates
         Output coordinates of resampled cues.
     """
 

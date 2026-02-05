@@ -75,6 +75,7 @@ class BayesianListener:
 
         resampled_cues, coords_new = resample.resample(cues_list,
                                                        self.coords,
+                                                       self.interpolation_grid,
                                                        method=interpolation)
 
         # Unpack results
@@ -94,12 +95,14 @@ class BayesianListener:
     def prepare_features(self,
                          spectral_range=[7e2, 18e3],
                          interpolation='SH',
+                         interpolation_grid=None,
                          use_cache=True,
                          force_recompute=False):
         """
         delegates to cached or direct computation of spatial features and
         templates.
         """
+        self.interpolation_grid = interpolation_grid
         assert(self.sofa_file is not None)
 
         if use_cache:

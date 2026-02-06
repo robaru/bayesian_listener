@@ -445,7 +445,8 @@ class BayesianListener:
 
     def plot_cues(self, title='', fig=None, ax=None, clim=None, elev_min=None):
         side = 0 # left/right channel
-        dirs = self.coords.sph()
+        dirs = self.coords.spherical_elevation
+        dirs[:, 0:2] = np.rad2deg(dirs[:, 0:2])
         # select directions with azimuth almost zero (median frontal plane)
         median_idx = np.abs(dirs[:, 0] - 0) < 2
         elevations = dirs[median_idx,1]

@@ -231,22 +231,11 @@ def resample_old(values, coords_in, dirs = None, plot_grid=False):
     dirs_SH = np.transpose([dirs_sph[0], dirs_sph[1]])
 
     # transform signal to SH domain
-    c = coords_in.spherical_elevation
-    dirs_original = c[:, (0, 1)]
-
-    # move to navigation coordinates
-    # azi = dirs_original[:, 0]  # must be in [0, 2*pi]
-    ele = dirs_original[:, 1]
-    if np.any(ele < 0):
-        ele = ele + np.pi/2 # must be in [0, pi].
-
-    zen = np.pi - ele
+    dirs_meas = coords_in.spherical_colatitude[0:2]
 
     ###
     #  Let's identify the minimum order to adjust the HRTF spherical grid
     ###
-    dirs_meas = dirs_original
-    dirs_meas[:, 1] = zen
 
     N_low = find_max_order(dirs_meas)
     # print(N_low)

@@ -488,11 +488,13 @@ class BayesianListener:
         ax.set_xticklabels([f'{freq:.0f}' for freq in [100, 1e3, 5e3, 1e4]])
         ax.set_yticks(np.arange(len(elevations)))
         ax.set_yticklabels([f'{elev:.0f}' for elev in elevations])
+        plt.show()
 
         return fig, ax
 
     def plot_post(self, posterior, estimations):
         amps = posterior.squeeze()
+
         ax = self.template.coords.show(
                 c=np.maximum(amps, np.log(np.finfo(amps.dtype).eps)),
                 s=20,
@@ -502,9 +504,9 @@ class BayesianListener:
         ax.plot([0, 1], [0, 0], zs=[0, 0], c='red', label='Front direction')
 
         if estimations is not None:
-            ax.plot(xs=[0, estimations.x[0]],
-                    ys=[0, estimations.y[0]],
-                    zs=[0, estimations.z[0]],
+            ax.plot(xs=[0, estimations.x.squeeze()],
+                    ys=[0, estimations.y.squeeze()],
+                    zs=[0, estimations.z.squeeze()],
                     c='blue',
                     label='Estimated direction',
                     )

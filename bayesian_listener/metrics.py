@@ -14,25 +14,56 @@ def localization_error(targets, estimations, metric, auxiliary_output=False):
     Parameters
     ----------
     targets : Coordinates
-        The target coordinates.
+        The target (reference) coordinates.
     estimations : Coordinates
         The estimated coordinates to compare against.
     metric : str or callable
         The metric to use for error computation.
-        If a string, it should be a registered metric name.
-        If callable, it should be a function that takes two
-        np.ndarray arguments (targets and estimations) and
-        returns a float or a tuple (float, dict).
+        -   If a string, it should be a registered metric name.
+            You can view available metrics using describe_metrics()
+            and get specific details with describe_metrics(name).
+        -   If a callable, it must be a function that takes
+            two np.ndarray arguments (targets, estimations),
+            where each argument is shaped (n, 3) and represents either
+            angular or Cartesian coordinates (e.g. (radians, radians, meters)
+            or (meters, meters, meters)).
+            In this case, the user is responsible for ensuring that
+            both localization_error() input Coordinates
+            (targets and estimations) are in the correct
+            coordinate system required by the callable metric function.
+            The callable should return either a single float (error value)
+            or a tuple (error_value, auxiliary_data).
     auxiliary_output : bool, optional
-        If True, return auxiliary output from the metric function.
+        This is irrelevant if `metric` is a callable,
+        since the user should handle this in their custom function.
+        If True, also returns the auxiliary output (dict)
+        from the metric function, if available.
         Default is False.
 
     Returns
     -------
     float or tuple :
         The computed localization error.
-        If auxiliary_output is True, returns a tuple
-        (error_value, auxiliary_data).
+        If `auxiliary_output` is True, the output will be a tuple:
+        (error_value, auxiliary_data_dict).
+        If the metric function does not provide auxiliary data,
+        auxiliary_data_dict will be an empty dictionary.
+
+    Examples
+    --------
+    Auxiliary output example:
+
+    A metric function like `querrMiddlebrooks` can return
+    both the main error value and a dictionary with extra details.
+
+    >>> error, aux = localization_error(true,
+                                        est,
+                                        querrMiddlebrooks,
+                                        auxiliary_output=True)
+    >>> print(error)
+    9.375
+    >>> print(aux)
+    {'confusion_count': 48, 'response_count': 512}
     """
     # Accept only Coordinates instances
     assert isinstance(targets, Coordinates), \

@@ -3,6 +3,7 @@ This module contains functions to compute localization errors based on a set
 of target and response directions.
 """
 import numpy as np
+from bayesian_listener.coordinates import Coordinates
 
 
 def localization_error(targets, estimations, metric, auxiliary_output=False):
@@ -12,9 +13,9 @@ def localization_error(targets, estimations, metric, auxiliary_output=False):
 
     Parameters
     ----------
-    targets : Coordinates or np.ndarray
+    targets : Coordinates
         The target coordinates.
-    estimations : Coordinates or np.ndarray
+    estimations : Coordinates
         The estimated coordinates to compare against.
     metric : str or callable
         The metric to use for error computation.
@@ -33,15 +34,15 @@ def localization_error(targets, estimations, metric, auxiliary_output=False):
         If auxiliary_output is True, returns a tuple
         (error_value, auxiliary_data).
     """
-    # Accept both Coordinates and arrays; if Coordinates, get .positions
-    if hasattr(targets, "positions"):
-        x_tar = targets.positions
-    else:
-        x_tar = targets
-    if hasattr(estimations, "positions"):
-        x_est = estimations.positions
-    else:
-        x_est = estimations
+    # Accept only Coordinates instances
+    assert isinstance(targets, Coordinates), \
+        f"Expected targets to be a Coordinates instance, got {type(targets)}"
+    assert isinstance(estimations, Coordinates), \
+        f"Expected estimations to be a Coordinates instance, " \
+        f"got {type(estimations)}"
+
+    x_tar = targets.positions
+    x_est = estimations.positions
 
     if x_tar.shape != x_est.shape:
         raise ValueError(f"Shape mismatch: {x_tar.shape} vs {x_est.shape}")
@@ -61,27 +62,33 @@ def localization_error(targets, estimations, metric, auxiliary_output=False):
         get_metric_metadata(metric)['coord_convention']
     expected_unit = get_metric_metadata(metric)['input_unit']
 
-    # If Coordinates instances, convert both
-    # to the expected coordinate convention
-    has_tar_convert = hasattr(targets, "convert")
-    has_est_convert = hasattr(estimations, "convert")
-    if has_tar_convert and has_est_convert:
-        converted_tar = targets.convert(expected_coord_convention)
-        converted_est = estimations.convert(expected_coord_convention)
-    elif not has_tar_convert and not has_est_convert:
-        # If raw arrays, assume they are already in the expected convention
-        converted_tar = x_tar
-        converted_est = x_est
-    else:
-        # Mixed types (one Coordinates, one array) are ambiguous and may
-        # lead to incorrect coordinate conventions; require consistency.
-        raise TypeError(
-            "Inconsistent input types: 'targets' and 'estimations' must "
-            "both be Coordinates instances or both be array-like when "
-            "using string metrics."
-        )
+    assert expected_coord_convention in [
+        'cartesian',
+        'spherical',
+        'horizontal-polar',
+        ], \
+        f"Unsupported coordinate convention: {expected_coord_convention} " \
+        f"(expected one of 'cartesian', 'spherical', 'horizontal-polar')"
 
-    # TODO: Evaluate the unit if necessary
+    assert expected_unit in [
+        'radians',
+        'degrees',
+        'meters',
+        ], \
+        f"Unsupported input unit: {expected_unit} " \
+        f"(expected one of 'radians', 'degrees', 'meters')"
+
+    # Convert coordinates to the expected convention
+    converted_tar = targets.convert(expected_coord_convention)
+    converted_est = estimations.convert(expected_coord_convention)
+
+    # Convert units if necessary
+    # Coordinates class uses radians and meters internally,
+    # so we only need to convert if expected_unit is 'degrees'
+    if expected_unit == 'degrees':
+        # Only convert the angular components (rad, rad, m) → (deg, deg, m)
+        converted_tar[:, :2] = np.rad2deg(converted_tar[:, :2])
+        converted_est[:, :2] = np.rad2deg(converted_est[:, :2])
 
     value, aux_out = \
         METRIC_FUNCTIONS[metric](converted_tar, converted_est)

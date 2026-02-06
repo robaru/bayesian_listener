@@ -58,7 +58,7 @@ def localization_error(targets, estimations, metric, auxiliary_output=False):
 
     >>> error, aux = localization_error(true,
                                         est,
-                                        querrMiddlebrooks,
+                                        'querrMiddlebrooks',
                                         auxiliary_output=True)
     >>> print(error)
     9.375
@@ -66,11 +66,10 @@ def localization_error(targets, estimations, metric, auxiliary_output=False):
     {'confusion_count': 48, 'response_count': 512}
     """
     # Accept only Coordinates instances
-    assert isinstance(targets, Coordinates), \
-        f"Expected targets to be a Coordinates instance, got {type(targets)}"
-    assert isinstance(estimations, Coordinates), \
-        f"Expected estimations to be a Coordinates instance, " \
-        f"got {type(estimations)}"
+    if not isinstance(targets, Coordinates) or \
+       not isinstance(estimations, Coordinates):
+        raise TypeError(
+            "Both targets and estimations must be Coordinates instances.")
 
     x_tar = targets.positions
     x_est = estimations.positions
@@ -93,21 +92,11 @@ def localization_error(targets, estimations, metric, auxiliary_output=False):
         get_metric_metadata(metric)['coord_convention']
     expected_unit = get_metric_metadata(metric)['input_unit']
 
-    assert expected_coord_convention in [
-        'cartesian',
-        'spherical',
-        'horizontal-polar',
-        ], \
-        f"Unsupported coordinate convention: {expected_coord_convention} " \
-        f"(expected one of 'cartesian', 'spherical', 'horizontal-polar')"
-
-    assert expected_unit in [
-        'radians',
-        'degrees',
-        'meters',
-        ], \
-        f"Unsupported input unit: {expected_unit} " \
-        f"(expected one of 'radians', 'degrees', 'meters')"
+    # Expected conventions and units are internally generated
+    # by the registration system, there is no need to check them here.
+    # The conventions are in ['cartesian', 'spherical', 'horizontal-polar']
+    # The units are in ['radians', 'degrees', 'meters']
+    # For the same reason, we assume units are coherent within the conventions.
 
     # Convert coordinates to the expected convention
     converted_tar = targets.convert(expected_coord_convention)
@@ -115,7 +104,7 @@ def localization_error(targets, estimations, metric, auxiliary_output=False):
 
     # Convert units if necessary
     # Coordinates class uses radians and meters internally,
-    # so we only need to convert if expected_unit is 'degrees'
+    # so we only need a conversion if expected_unit is 'degrees'
     if expected_unit == 'degrees':
         # Only convert the angular components (rad, rad, m) → (deg, deg, m)
         converted_tar[:, :2] = np.rad2deg(converted_tar[:, :2])

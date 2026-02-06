@@ -491,13 +491,28 @@ class BayesianListener:
 
     def plot_post(self, posterior, estimations):
         amps = posterior.squeeze()
-        self.template.coords.plot(np.maximum(amps,
-                                             np.log(np.finfo(amps.dtype).eps)),
-                                             estimations.squeeze())
-        self.template.coords.show(
-            estimations.squeeze(),
-            color=np.maximum(amps, np.log(np.finfo(amps.dtype).eps)),
-            )
+        estimations = estimations.squeeze()
 
+        ax = self.template.coords.show(
+                c=np.maximum(amps, np.log(np.finfo(amps.dtype).eps)),
+                s=20,
+                alpha=.5,
+                label='Log posterior')
 
+        ax.plot([0, 1], [0, 0], zs=[0, 0], c='red', label='Front direction')
+
+        if estimations is not None:
+            ax.plot(xs=[0, estimations[0]],
+                    ys=[0, estimations[1]],
+                    zs=[0, estimations[2]],
+                    c='blue',
+                    label='Estimated direction',
+                    )
+
+        ax.view_init(elev=0, azim=0)
+        ax.set_box_aspect([1, 1, 1])
+        cbar = plt.colorbar(ax.collections[0], ax=ax, orientation='vertical')
+        cbar.set_label('Values')
+        ax.legend()
+        plt.show()
 

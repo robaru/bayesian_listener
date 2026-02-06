@@ -55,20 +55,18 @@ def test_model_single():
     # Disable motor noise for deterministic test
     estimation = am.estimate(posterior, sigma_motor=0)
 
-    # Get original and estimated directions in spherical coordinates
-    estimated_coords = pf.Coordinates.from_cartesian(
-        estimation[:, 0, 0],
-        estimation[:, 0, 1],
-        estimation[:, 0, 2])
-    estimated_dir = np.rad2deg(estimated_coords.spherical_elevation[..., 0:2])
+    estimated_dir = np.rad2deg(estimation.spherical_elevation[..., 0:2])
 
+    # Check estimate return type
+    assert isinstance(estimation, pf.Coordinates)
 
     # Verify shape
-    assert estimation.shape == (1, 1, 3)
-    assert np.allclose(np.linalg.norm(estimation[0, 0, :]), 1.0, atol=0.1)
+    assert estimation.cartesian.shape == (1, 1, 3)
+    assert np.allclose(np.linalg.norm(estimation.cartesian[0, 0, :]),
+                       1.0, atol=0.1)
 
     # Compare with fixed expected spherical coordinates (azimuth, elevation)
-    expected_dir_sph = np.array([[126.58887 ,  -9.108036]])
+    expected_dir_sph = np.array([[[126.58887,  -9.108036]]])
     np.testing.assert_allclose(estimated_dir, expected_dir_sph, rtol=1e-2)
 
 def test_interp():

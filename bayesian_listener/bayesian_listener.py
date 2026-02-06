@@ -441,7 +441,9 @@ class BayesianListener:
                 estimations[:, rt, :] = utils.scatter_von_mises(
                     estimations[:, rt, :], sigma_motor)
 
-        return estimations
+        return pf.Coordinates.from_cartesian(estimations[..., 0],
+                                             estimations[..., 1],
+                                             estimations[..., 2])
 
     def plot_cues(self, title='', fig=None, ax=None, clim=None, elev_min=None):
         side = 0 # left/right channel
@@ -491,8 +493,6 @@ class BayesianListener:
 
     def plot_post(self, posterior, estimations):
         amps = posterior.squeeze()
-        estimations = estimations.squeeze()
-
         ax = self.template.coords.show(
                 c=np.maximum(amps, np.log(np.finfo(amps.dtype).eps)),
                 s=20,
@@ -502,14 +502,14 @@ class BayesianListener:
         ax.plot([0, 1], [0, 0], zs=[0, 0], c='red', label='Front direction')
 
         if estimations is not None:
-            ax.plot(xs=[0, estimations[0]],
-                    ys=[0, estimations[1]],
-                    zs=[0, estimations[2]],
+            ax.plot(xs=[0, estimations.x[0]],
+                    ys=[0, estimations.y[0]],
+                    zs=[0, estimations.z[0]],
                     c='blue',
                     label='Estimated direction',
                     )
 
-        ax.view_init(elev=0, azim=0)
+        ax.view_init(elev=20, azim=35)
         ax.set_box_aspect([1, 1, 1])
         cbar = plt.colorbar(ax.collections[0], ax=ax, orientation='vertical')
         cbar.set_label('Values')

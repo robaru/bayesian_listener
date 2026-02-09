@@ -4,6 +4,8 @@ from pathlib import Path
 import time
 from itertools import product
 from pybads import BADS
+from scipy.special import i0, i1
+from scipy.optimize import minimize_scalar
 
 from bayesian_listener import BayesianListener
 from bayesian_listener.coordinates import Coordinates
@@ -21,8 +23,200 @@ def kappa2sigma(kappa):
     """Convert von Mises-Fisher concentration to angular standard deviation (degrees)."""
     return 2.0 * np.rad2deg(np.arcsin(np.sqrt(1.0 / (2.0 * kappa))))
 
+def wrap_to_pi(rad):
+    """Wrap angles to [-pi, pi)."""
+    return (rad + np.pi) % (2 * np.pi) - np.pi
+
+def von_mises_loglik_mc(kappa, resp_lat, est_lat_mc):
+    """
+    Negative log-likelihood for von Mises with Monte Carlo estimates.
+
+    Parameters
+    ----------
+    kappa : float
+        Von Mises concentration parameter.
+    resp_lat : ndarray
+        Observed lateral angles (n_obs,) in radians.
+    est_lat_mc : ndarray
+        Monte Carlo model predictions (n_obs x n_mc) in radians.
+
+    Returns
+    -------
+    float
+        Negative log-likelihood.
+    """
+    log_C = -np.log(2 * np.pi * i0(kappa))
+    lat_diff = resp_lat[:, None] - est_lat_mc
+    log_pdfs = log_C + kappa * np.cos(lat_diff)
+    max_log_pdfs = np.max(log_pdfs, axis=1, keepdims=True)
+    log_mean_probs = max_log_pdfs[:, 0] + np.log(np.mean(np.exp(log_pdfs - max_log_pdfs), axis=1))
+    return -np.sum(log_mean_probs)
+
+def fit_kappa_ml(resp_lat, est_lat_mc):
+    """
+    Fit von Mises concentration parameter via maximum likelihood.
+
+    Parameters
+    ----------
+    resp_lat : ndarray
+        Observed lateral angles (n_obs,) in radians.
+    est_lat_mc : ndarray
+        Monte Carlo model predictions (n_obs x n_mc) in radians.
+
+    Returns
+    -------
+    float
+        Fitted kappa (concentration parameter).
+    """
+    result = minimize_scalar(von_mises_loglik_mc, bounds=(0.1, 500),
+                            args=(resp_lat, est_lat_mc), method='bounded')
+    return result.x
+
+def kappa_to_sigma_bessel(kappa):
+    """
+    Convert von Mises concentration to circular standard deviation (degrees).
+    Uses Bessel function ratio for circular variance.
+
+    Parameters
+    ----------
+    kappa : float
+        Von Mises concentration parameter.
+
+    Returns
+    -------
+    float
+        Circular standard deviation in degrees.
+    """
+    if kappa < 1e-6:
+        return 180.0
+    R = i1(kappa) / i0(kappa)
+    return np.rad2deg(np.sqrt(-2 * np.log(R)))
+
+def estimate_motor_noise(model, obs_tbl, targets_coords, subject_id=None,
+                         num_repetitions=200, seed=42):
+    """
+    Estimate motor noise from behavioral data using ITD+ILD cues only.
+
+    This function estimates motor noise by:
+    1. Using only ITD+ILD features to predict responses (no spectral cues)
+    2. Generating Monte Carlo samples of lateral predictions
+    3. Fitting a von Mises distribution to lateral angle errors
+    4. Converting the fitted concentration to sigma_motor in degrees
+
+    The approach filters responses to ±80° lateral for numerical stability.
+
+    Parameters
+    ----------
+    model : BayesianListener
+        Model instance with prepared features.
+    obs_tbl : DataFrame
+        Behavioral observations with columns:
+        'azi_response', 'ele_response', 'azi_target', 'ele_target'.
+        If subject_id is provided, must also contain 'participant'.
+    targets_coords : Coordinates
+        Target direction coordinates.
+    subject_id : str, optional
+        Subject identifier for filtering obs_tbl.
+    num_repetitions : int
+        Number of Monte Carlo samples for predictions.
+    seed : int
+        Random seed for reproducibility.
+
+    Returns
+    -------
+    dict
+        Dictionary with keys:
+        - 'sigma_motor': Estimated motor noise in degrees
+        - 'kappa_motor': Fitted concentration parameter
+        - 'n_trials': Number of trials used (after filtering)
+    """
+    np.random.seed(seed)
+
+    # Fixed ITD/ILD noise (from parameter recovery notebook)
+    sigma_itd = 0.569
+    sigma_ild = 1.0
+
+    # Get subject data
+    if subject_id is not None:
+        subj_data = obs_tbl[obs_tbl['participant'] == subject_id]
+    else:
+        subj_data = obs_tbl
+
+    # Template ITD+ILD features
+    template_itd = model.template.itd.flatten()
+    template_ild = model.template.ild.flatten()
+    template_hp = model.template.coords.convert('horizontal-polar')
+    template_lat = template_hp[:, 0]
+
+    # Target ITD+ILD features
+    target_indices = model.coords.find(targets_coords)[1]
+    target_itd = model.itd[target_indices].flatten()
+    target_ild = model.ild[target_indices].flatten()
+
+    # Response lateral angles
+    resp_coords = Coordinates(
+        positions=np.column_stack([
+            np.deg2rad(subj_data['azi_response'].values),
+            np.deg2rad(subj_data['ele_response'].values),
+            np.ones(len(subj_data))
+        ]),
+        convention='spherical'
+    )
+    resp_lat = resp_coords.convert('horizontal-polar')[:, 0]
+
+    # Map trials to targets
+    targ_coords = Coordinates(
+        positions=np.column_stack([
+            np.deg2rad(subj_data['azi_target'].values),
+            np.deg2rad(subj_data['ele_target'].values),
+            np.ones(len(subj_data))
+        ]),
+        convention='spherical'
+    )
+    trial_target_indices = targets_coords.find(targ_coords)[1]
+
+    # Monte Carlo estimates for each trial
+    n_trials = len(subj_data)
+    est_lat_mc = np.zeros((n_trials, num_repetitions))
+
+    for i, t_idx in enumerate(trial_target_indices):
+        # Add noise to target features
+        noisy_itd = target_itd[t_idx] + np.random.normal(0, sigma_itd, num_repetitions)
+        noisy_ild = target_ild[t_idx] + np.random.normal(0, sigma_ild, num_repetitions)
+
+        # Compute log-likelihood for each template direction
+        itd_diff = (template_itd[None, :] - noisy_itd[:, None]) / sigma_itd
+        ild_diff = (template_ild[None, :] - noisy_ild[:, None]) / sigma_ild
+        loglik = -0.5 * (itd_diff**2 + ild_diff**2)
+
+        # Find best matching template for each MC sample
+        best_indices = np.argmax(loglik, axis=1)
+        est_lat_mc[i, :] = template_lat[best_indices]
+
+    # Filter to ±80° lateral for numerical stability
+    mask = np.abs(resp_lat) <= np.deg2rad(80)
+    resp_lat_filt = resp_lat[mask]
+    est_lat_mc_filt = est_lat_mc[mask, :]
+
+    if np.sum(mask) < 3:
+        return {
+            'sigma_motor': np.nan,
+            'kappa_motor': np.nan,
+            'n_trials': int(np.sum(mask))
+        }
+
+    # Fit von Mises concentration
+    kappa_fit = fit_kappa_ml(resp_lat_filt, est_lat_mc_filt)
+    sigma_motor = kappa_to_sigma_bessel(kappa_fit)
+
+    return {
+        'sigma_motor': sigma_motor,
+        'kappa_motor': kappa_fit,
+        'n_trials': int(np.sum(mask))
+    }
+
 def loglik(model, targets, responses_cart, resp_targets_idx, sigmas_log,
-           num_repetitions=300):
+           num_repetitions=200):
     """
     Negative log-likelihood function for parameter fitting.
 
@@ -115,12 +309,16 @@ def loglik(model, targets, responses_cart, resp_targets_idx, sigmas_log,
     return -loglik_total
 
 
-def fit_listener(sofa_path, obs_tbl, targets_coords,
-                 interpolation_method, subject_id=None,
-                 num_repetitions=300, num_grid_points=1,
-                 verbose=True):
+def fit_listener_full(sofa_path, obs_tbl, targets_coords,
+                      interpolation_method, subject_id=None,
+                      num_repetitions=200, num_grid_points=1,
+                      verbose=True):
     """
-    Fit the Bayesian listener model for a single participant.
+    Fit the Bayesian listener model for a single participant (all 4 parameters).
+
+    This function fits all noise parameters: sigma_ild, sigma_spectral,
+    sigma_motor, and sigma_prior. For the recommended approach that first
+    estimates motor noise from ITD+ILD only, use fit_listener() instead.
 
     Parameters
     ----------
@@ -129,7 +327,7 @@ def fit_listener(sofa_path, obs_tbl, targets_coords,
     obs_tbl : DataFrame
         Behavioral observations. Must contain columns:
         'azi_response', 'ele_response', 'azi_target', 'ele_target'.
-        If subject_id is provided, must also contain 'subject'.
+        If subject_id is provided, must also contain 'participant'.
     targets_coords : Coordinates
         Target direction coordinates.
     interpolation_method : str
@@ -326,10 +524,159 @@ PARAM_BOUNDS = {
 }
 
 
+def fit_listener(sofa_path, obs_tbl, targets_coords,
+                 interpolation_method, subject_id=None,
+                 num_repetitions=200, num_repetitions_motor=200,
+                 num_grid_points=1, fix_sigma_ild=True,
+                 motor_estimation_seed=42, verbose=True):
+    """
+    Fit the Bayesian listener model with motor noise estimated from ITD+ILD.
+
+    This is the recommended fitting procedure that:
+    1. Estimates motor noise from lateral errors using ITD+ILD cues only
+    2. Fixes motor noise and optionally ILD noise at estimated/default values
+    3. Fits only sigma_spectral and sigma_prior parameters
+
+    This approach follows the methodology from the parameter recovery validation.
+
+    Parameters
+    ----------
+    sofa_path : str
+        Path to the participant's SOFA file.
+    obs_tbl : DataFrame
+        Behavioral observations. Must contain columns:
+        'azi_response', 'ele_response', 'azi_target', 'ele_target'.
+        If subject_id is provided, must also contain 'participant'.
+    targets_coords : Coordinates
+        Target direction coordinates.
+    interpolation_method : str
+        HRTF interpolation method (e.g. 'SH', 'SHMAX', 'barycentric',
+        'barumerli2023').
+    subject_id : str, optional
+        Subject identifier. If provided, obs_tbl is filtered to this
+        subject. If None, all rows in obs_tbl are used.
+    num_repetitions : int
+        Number of Monte Carlo repetitions for likelihood evaluation during
+        parameter fitting (default: 300).
+    num_repetitions_motor : int
+        Number of Monte Carlo repetitions for motor noise estimation
+        (default: 200).
+    num_grid_points : int
+        Number of grid points per parameter dimension for initialization.
+    fix_sigma_ild : bool
+        If True, fixes sigma_ild to 1.0 dB (default: True).
+        If False, sigma_ild is also fitted.
+    motor_estimation_seed : int
+        Random seed for motor noise estimation (default: 42).
+    verbose : bool
+        Print progress messages.
+
+    Returns
+    -------
+    dict
+        Fitting results containing:
+        - Fitted parameters (sigma_spectral, sigma_prior)
+        - Fixed parameters (sigma_motor, sigma_ild, sigma_itd)
+        - Motor estimation results (kappa_motor, n_trials_motor)
+        - NLL and timing information
+    """
+    label = subject_id or Path(sofa_path).stem
+    if verbose:
+        print(f"\n{'='*60}")
+        print(f"Subject: {label} | Method: {interpolation_method}")
+        print(f"{'='*60}")
+
+    t_start_total = time.time()
+
+    try:
+        # Load HRTF and create model
+        model = BayesianListener(sofa_path)
+        model.prepare_features(interpolation=interpolation_method)
+
+        # Step 1: Estimate motor noise from ITD+ILD
+        if verbose:
+            print("  Estimating motor noise from ITD+ILD...")
+        t_motor_start = time.time()
+        motor_result = estimate_motor_noise(
+            model=model,
+            obs_tbl=obs_tbl,
+            targets_coords=targets_coords,
+            subject_id=subject_id,
+            num_repetitions=num_repetitions_motor,
+            seed=motor_estimation_seed
+        )
+        t_motor = time.time() - t_motor_start
+
+        sigma_motor_est = motor_result['sigma_motor']
+        if verbose:
+            print(f"  Motor noise: σ_motor = {sigma_motor_est:.2f}° "
+                  f"(κ = {motor_result['kappa_motor']:.2f}, "
+                  f"n = {motor_result['n_trials']}) ({t_motor:.1f}s)")
+
+        # Step 2: Fit remaining parameters with motor noise fixed
+        if verbose:
+            print("  Fitting spectral and prior noise...")
+
+        # Determine which parameters to fit
+        if fix_sigma_ild:
+            params_to_fit = ['sigma_spectral', 'sigma_prior']
+            fixed_params = {
+                'sigma_motor': sigma_motor_est,
+                'sigma_ild': 1.0
+            }
+        else:
+            params_to_fit = ['sigma_ild', 'sigma_spectral', 'sigma_prior']
+            fixed_params = {
+                'sigma_motor': sigma_motor_est
+            }
+
+        # Call fit_listener_partial
+        result = fit_listener_partial(
+            sofa_path=sofa_path,
+            obs_tbl=obs_tbl,
+            targets_coords=targets_coords,
+            interpolation_method=interpolation_method,
+            params_to_fit=params_to_fit,
+            fixed_params=fixed_params,
+            subject_id=subject_id,
+            num_repetitions=num_repetitions,
+            num_grid_points=num_grid_points,
+            verbose=False  # We handle verbose output here
+        )
+
+        # Add motor estimation info to results
+        result['sigma_motor_method'] = 'itd_ild_estimation'
+        result['kappa_motor'] = motor_result['kappa_motor']
+        result['n_trials_motor'] = motor_result['n_trials']
+        result['time_motor'] = t_motor
+
+        t_total = time.time() - t_start_total
+        result['time_total'] = t_total
+
+        if verbose:
+            print(f"  Final NLL: {result['nll']:.2f}")
+            print(f"  Total time: {t_total:.1f}s")
+            print(f"  sigma_ILD: {result['sigma_ild']:.2f}, "
+                  f"sigma_spectral: {result['sigma_spectral']:.2f}, "
+                  f"sigma_motor: {result['sigma_motor']:.2f}, "
+                  f"sigma_prior: {result['sigma_prior']:.2f}")
+
+        return result
+
+    except Exception as e:
+        print(f"ERROR fitting {label} with {interpolation_method}: {e}")
+        return {
+            'subject': label,
+            'method': interpolation_method,
+            'success': False,
+            'error': str(e)
+        }
+
+
 def fit_listener_partial(sofa_path, obs_tbl, targets_coords,
                          interpolation_method, params_to_fit,
                          fixed_params=None, subject_id=None,
-                         num_repetitions=300, num_grid_points=1,
+                         num_repetitions=200, num_grid_points=1,
                          verbose=True):
     """
     Fit the Bayesian listener model with a subset of parameters.

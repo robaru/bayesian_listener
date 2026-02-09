@@ -230,7 +230,7 @@ def itdestimator(signals, fs=None):
 
 def scatter_von_mises(dirs, sigma_m, seed=None):
     assert dirs.shape[1] == 3 or dirs.size == 3
-    assert sigma_m >= 5, \
+    assert sigma_m >= 4.5, \
         'sensorimotor concentration too small and can lead to complex values'
 
     dirs = np.squeeze(dirs)

@@ -91,7 +91,7 @@ def resample_barumerli2023(values,
         # regularization
         lambda_val = 4.0
         SIG = np.eye((N_sph+1)**2)
-        SIG[1:(2+1)**2,1:(2+1)**2] = 0
+        SIG[:(2+1)**2,:(2+1)**2] = 0
 
         # get SH basis on old directions
         Y_N_tik = spaudiopy.sph.sh_matrix(N_sph, azi, zen, 'real')

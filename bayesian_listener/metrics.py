@@ -191,6 +191,62 @@ def rmsL(true, est):
 
 
 @register_metric(
+    name="accL_cutoff",
+    coord_convention="horizontal-polar",
+    input_unit="radians",
+    output_unit="radians",
+    description=(
+        "Lateral bias (mean signed error) within ±cutoff° lateral.\n\t"
+        "Mean of the signed difference between response and target lateral angles\n\t"
+        "within ±cutoff° lateral. Cutoff defaults to 180° (π radians)."
+    ),
+    ylabel="Lateral bias (rad)",
+)
+def accL_cutoff(true, est, cutoff=np.pi):
+    """
+    Compute lateral bias (mean signed error) within ±cutoff° lateral.
+    More details in the decorator above.
+    """
+    lat_true = wrap_to_pi(true[..., 0])
+    lat_est = wrap_to_pi(est[..., 0])
+    mask = np.abs(lat_true) <= cutoff
+    if not np.any(mask):
+        return np.nan
+    diff = wrap_to_pi(lat_est - lat_true)[mask]
+    return np.mean(diff)
+
+
+@register_metric(
+    name="accP_cutoff",
+    coord_convention="horizontal-polar",
+    input_unit="radians",
+    output_unit="radians",
+    description=(
+        "Elevation bias (mean signed error) within ±cutoff° lateral.\n\t"
+        "Mean of the signed difference between response and target polar angles\n\t"
+        "within ±cutoff° lateral. Cutoff defaults to 30° (π/6 radians).\n\t"
+        "Positive values indicate upward bias, negative values indicate downward bias."
+    ),
+    ylabel="Elevation bias (rad)",
+)
+def accP_cutoff(true, est, cutoff=np.deg2rad(30)):
+    """
+    Compute elevation bias (mean signed error) within ±cutoff° lateral.
+    More details in the decorator above.
+    """
+    lat_est = wrap_to_pi(est[..., 0])
+    mask = np.abs(lat_est) <= cutoff
+    if not np.any(mask):
+        return np.nan
+
+    pol_true = wrap_polar_angle(true[..., 1])
+    pol_est = wrap_polar_angle(est[..., 1])
+
+    diff = wrap_to_pi(pol_est - pol_true)[mask]
+    return np.mean(diff)
+
+
+@register_metric(
     name="rmsPmedianlocal",
     coord_convention="horizontal-polar",
     input_unit="radians",

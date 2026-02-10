@@ -54,7 +54,7 @@ def test_model_single():
     # Estimate position with fixed seed
     posterior = am.infer(target, repetitions=1, seed=42)
     # Disable motor noise for deterministic test
-    estimation = am.estimate(posterior, sigma_motor=0)
+    estimation = am.estimate(posterior, kappa_motor=0)
 
     # Get original and estimated directions in spherical coordinates
     estimated_coords = Coordinates(
@@ -89,7 +89,7 @@ def test_model_multiple():
         "sigma_ild": 1e-1,
         "sigma_spectral": 1e-1,
         "sigma_prior": 180,
-        "sigma_motor": 0,
+        "kappa_motor": 0,
     }
 
     # Pick two targets from distinct directions
@@ -103,7 +103,7 @@ def test_model_multiple():
 
     # Run inference: 2 targets x 2 repetitions
     posterior = am.infer(targets, repetitions=2, seed=42)
-    estimation = am.estimate(posterior, sigma_motor=0)
+    estimation = am.estimate(posterior, kappa_motor=0)
 
     # Verify shapes: (n_targets, n_repetitions, 3)
     assert estimation.shape == (2, 2, 3), \

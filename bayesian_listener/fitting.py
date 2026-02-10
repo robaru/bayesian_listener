@@ -60,7 +60,7 @@ def fit_kappa_ml(resp_lat, est_lat_mc):
     float
         Fitted kappa (concentration parameter).
     """
-    result = minimize_scalar(von_mises_loglik_mc, bounds=(0.1, 500),
+    result = minimize_scalar(von_mises_loglik_mc, bounds=(0.1, 1000.0),
                             args=(resp_lat, est_lat_mc), method='bounded')
     return result.x
 
@@ -72,7 +72,6 @@ def _bessel_ratio(kappa):
         # Asymptotic expansion: i1(k)/i0(k) ≈ 1 - 1/(2k) - 1/(8k^2) - ...
         return 1.0 - 1.0 / (2.0 * kappa) - 1.0 / (8.0 * kappa**2)
     return float(i1(kappa) / i0(kappa))
-
 
 def sigma_to_kappa(sigma):
     """
@@ -771,4 +770,4 @@ def fit_listener_partial(sofa_path, obs_tbl, targets_coords,
             'success': False,
             'error': str(e)
         }
-    
+

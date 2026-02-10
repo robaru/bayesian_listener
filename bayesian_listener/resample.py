@@ -332,16 +332,9 @@ def resample_barumerli2023(values,
     dirs_SH = np.transpose([azimuth, colatidude])
 
     # transform signal to SH domain
-    c = coords_in.spherical_elevation
-    dirs_original = c[:, (0, 1)]
-
-    # move to navigation coordinates
-    azi = dirs_original[:, 0]  # must be in [0, 2*pi]
-    ele = dirs_original[:, 1]
-    if np.any(ele < 0):
-        ele = ele + np.pi/2 # must be in [0, pi].
-
-    zen = np.pi - ele
+    c = coords_in.spherical_colatitude
+    azi = c[..., 0]
+    zen = c[..., 1]
 
     # get SH basis on new directions
     int_new = spaudiopy.sph.sh_matrix(N_sph, dirs_SH[:, 0],

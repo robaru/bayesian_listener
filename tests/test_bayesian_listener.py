@@ -55,7 +55,7 @@ def test_model_single():
     # Estimate position with fixed seed
     posterior = am.infer(target, repetitions=1, seed=seed)
     # Disable motor noise for deterministic test
-    estimation = am.estimate(posterior, sigma_motor=0, seed=seed)
+    estimation = am.estimate(posterior, kappa_motor=0, seed=seed)
 
     estimated_dir = np.rad2deg(estimation.spherical_elevation[..., 0:2])
 
@@ -149,7 +149,7 @@ def test_model_multiple():
         "sigma_ild": 1e-1,
         "sigma_spectral": 1e-1,
         "sigma_prior": 180,
-        "sigma_motor": 0,
+        "kappa_motor": 0,
     }
 
     # Pick two targets from distinct directions
@@ -163,7 +163,7 @@ def test_model_multiple():
 
     # Run inference: 2 targets x 2 repetitions
     posterior = am.infer(targets, repetitions=2, seed=42)
-    estimation = am.estimate(posterior, sigma_motor=0)
+    estimation = am.estimate(posterior, kappa_motor=0)
 
     # Verify shapes: (n_targets, n_repetitions, 3)
     assert estimation.shape == (2, 2, 3), \
@@ -194,7 +194,7 @@ def test_model_multiple():
             angular_err = np.sqrt(az_err**2 + el_err**2)
             if angular_err > tolerance_deg:
                 return False
-        
+
 
 def test_interp():
     """Test SHMAX interpolation produces valid template features."""

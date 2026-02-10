@@ -43,7 +43,7 @@ class BayesianListener:
             "sigma_ild": 0.75,
             "sigma_spectral": 4,
             "sigma_prior": 11.5,
-            "sigma_motor": 12,
+            "kappa_motor": 23.31,  # ~12 deg via Bessel-based conversion
         }
 
     @property
@@ -54,13 +54,18 @@ class BayesianListener:
     def parameters(self, value):
         if not isinstance(value, dict):
             raise ValueError("Parameters must be a dictionary.")
+        # backward compatibility: migrate sigma_motor -> kappa_motor
+        if 'sigma_motor' in value and 'kappa_motor' not in value:
+            from bayesian_listener.fitting import sigma_to_kappa
+            sigma_m = value.pop('sigma_motor')
+            value['kappa_motor'] = sigma_to_kappa(sigma_m) if sigma_m else 0
         # check if all parameters are present
         for key in [
             'sigma_itd',
             'sigma_ild',
             'sigma_spectral',
             'sigma_prior',
-            'sigma_motor',
+            'kappa_motor',
             ]:
             if key not in value:
                 raise ValueError(f"Missing parameter: {key}")
@@ -521,14 +526,14 @@ class BayesianListener:
                     idx = np.argmax(posterior[t, r, :])
                     estimations[t, r, :] = coords_temp[idx, :]
 
-        # pointing error - apply only if sigma_motor is not disabled
-        if sigma_motor is None:
-            sigma_motor = self.parameters['sigma_motor']
+        # pointing error - apply only if kappa_motor is not disabled
+        if kappa_motor is None:
+            kappa_motor = self.parameters['kappa_motor']
 
-        if sigma_motor not in [False, 0]:
+        if kappa_motor not in [False, 0]:
             for rt in range(repetitions):
                 estimations[:, rt, :] = utils.scatter_von_mises(
-                    estimations[:, rt, :], sigma_motor, seed=seed)
+                    estimations[:, rt, :], kappa_motor, seed=seed)
 
         return pf.Coordinates.from_cartesian(estimations[..., 0],
                                              estimations[..., 1],

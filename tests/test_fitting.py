@@ -5,7 +5,7 @@ from unittest.mock import patch, MagicMock
 
 from bayesian_listener.coordinates import Coordinates
 from bayesian_listener.fitting import (
-    fit_listener, loglik, sigma2kappa, kappa2sigma, allcomb,
+    fit_listener, loglik, sigma_to_kappa, kappa_to_sigma, allcomb,
 )
 
 from tests.test_bayesian_listener import get_sofa_file
@@ -15,17 +15,17 @@ from tests.test_bayesian_listener import get_sofa_file
 # Unit tests for helper functions
 # ---------------------------------------------------------------------------
 
-def test_sigma2kappa_roundtrip():
-    """sigma2kappa and kappa2sigma should be inverses."""
-    for sigma in [0.1, 10.0, 20.0, 45.0]:
-        kappa = sigma2kappa(sigma)
-        sigma_back = kappa2sigma(kappa)
-        np.testing.assert_allclose(sigma_back, sigma, rtol=1e-10)
+def test_sigma_to_kappa_roundtrip():
+    """sigma_to_kappa and kappa_to_sigma should be approximate inverses."""
+    for sigma in [5.0, 10.0, 20.0, 45.0]:
+        kappa = sigma_to_kappa(sigma)
+        sigma_back = kappa_to_sigma(kappa)
+        np.testing.assert_allclose(sigma_back, sigma, rtol=0.1)
 
 
-def test_sigma2kappa_monotonic():
+def test_sigma_to_kappa_monotonic():
     """Smaller sigma should give larger kappa."""
-    assert sigma2kappa(5) > sigma2kappa(10) > sigma2kappa(20)
+    assert sigma_to_kappa(5) > sigma_to_kappa(10) > sigma_to_kappa(20)
 
 
 def test_allcomb():
@@ -62,7 +62,7 @@ def fitting_data():
     for azi, ele, _ in target_dirs:
         for _ in range(10):
             rows.append({
-                'subject': 'test_subj',
+                'participant': 'test_subj',
                 'azi_target': azi,
                 'ele_target': ele,
                 'azi_response': azi + rng.normal(0, 3),
@@ -86,7 +86,7 @@ def model_and_arrays(fitting_data):
     target_indices = model.coords.find(targets_coords)[1]
     targets = model.represent()[target_indices, :]
 
-    subj_data = obs_tbl[obs_tbl['subject'] == 'test_subj']
+    subj_data = obs_tbl[obs_tbl['participant'] == 'test_subj']
     resp_coords = Coordinates(
         positions=np.column_stack([
             np.deg2rad(subj_data['azi_response'].values),
@@ -131,7 +131,7 @@ def test_loglik_returns_finite_scalar(model_and_arrays):
     50.0,           # moderate
     500.0,          # boundary of sinh overflow
     1000.0,         # well into large-kappa regime
-    sigma2kappa(1), # ~6565, extreme precision
+    sigma_to_kappa(1), # extreme precision
 ])
 def test_loglik_finite_across_kappa_range(model_and_arrays, kappa):
     """loglik must stay finite for kappa values spanning the full bound range."""
@@ -173,7 +173,7 @@ def test_fit_listener_smoke(fitting_data):
     assert result['success'] is True
     assert result['subject'] == 'test_subj'
     assert result['method'] == 'SH'
-    for key in ('sigma_ild', 'sigma_spectral', 'sigma_motor', 'sigma_prior', 'sdL'):
+    for key in ('sigma_ild', 'sigma_spectral', 'kappa_motor', 'sigma_motor', 'sigma_prior'):
         assert key in result
     assert result['nll'] == 1234.5
     mock_bads_instance.optimize.assert_called_once()

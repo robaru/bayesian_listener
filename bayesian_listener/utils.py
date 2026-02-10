@@ -228,19 +228,24 @@ def itdestimator(signals, fs=None):
 # SPHERICAL UTILITIES
 # -----------------------------------
 
-def scatter_von_mises(dirs, sigma_m, seed=None):
+def scatter_von_mises(dirs, kappa, seed = None):
+    """Apply von Mises-Fisher distributed noise to direction vectors.
+
+    Parameters
+    ----------
+    dirs : ndarray
+        Direction vectors in Cartesian coordinates (n x 3) or (3,).
+    kappa : float
+        Von Mises-Fisher concentration parameter (higher = less noise).
+    seed : int, optional
+        Random seed for reproducibility.
+    """
     assert dirs.shape[1] == 3 or dirs.size == 3
-    assert sigma_m >= 4.5, \
-        'sensorimotor concentration too small and can lead to complex values'
+    assert kappa > 0, 'kappa must be positive'
 
     dirs = np.squeeze(dirs)
 
-    # if dirs.ndim > 1:
-    #     if dirs.shape[1] == 3:
-    #         dirs = dirs.T
-
     dirs_new = np.zeros_like(dirs)
-    kappa = 1 / np.deg2rad(sigma_m)**2
 
     if dirs.ndim > 1:
         for i in range(dirs.shape[0]):

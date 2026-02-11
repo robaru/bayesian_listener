@@ -72,6 +72,43 @@ def test_model_single():
     expected_dir_sph = np.array([[126.58887 ,  -9.108036]])
     np.testing.assert_allclose(estimated_dir, expected_dir_sph, rtol=1e-2)
 
+def test_spectral_gradient():
+    """Test single target inference with fixed random seed for reproducibility."""
+    # Set random seed for reproducibility (for both infer and estimate)
+    np.random.seed(42)
+
+    # Load SOFA file
+    sofa_file = get_sofa_file()
+    am = BayesianListener(sofa_file)
+
+    # Prepare features
+    am.prepare_features(use_spectral_gradient = True)
+
+    # Pick one target
+    targets = am.represent()
+    target = targets[260, :]
+
+    # Estimate position with fixed seed
+    posterior = am.infer(target, repetitions=1, seed=42)
+    # Disable motor noise for deterministic test
+    estimation = am.estimate(posterior, kappa_motor=0)
+
+    # Get original and estimated directions in spherical coordinates
+    estimated_coords = Coordinates(
+        sofa_file=None,
+        positions=estimation[:, 0, :],
+        convention='cartesian'
+    )
+    estimated_dir = estimated_coords.sph()
+
+    # Verify shape
+    assert estimation.shape == (1, 1, 3)
+    assert np.allclose(np.linalg.norm(estimation[0, 0, :]), 1.0, atol=0.1)
+
+    # Compare with fixed expected spherical coordinates (azimuth, elevation)
+    expected_dir_sph = np.array([[122.26350998,   0.83707551]])
+    np.testing.assert_allclose(estimated_dir, expected_dir_sph, rtol=1e-2)
+
 def test_model_multiple():
     """Test inference with two targets and two repetitions.
 
@@ -134,7 +171,7 @@ def test_model_multiple():
             angular_err = np.sqrt(az_err**2 + el_err**2)
             if angular_err > tolerance_deg:
                 return False
-        
+
 
 def test_interp():
     """Test SHMAX interpolation produces valid template features."""

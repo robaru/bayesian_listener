@@ -41,6 +41,43 @@ def erb_space(freq_range=[7e2, 18e3], erb_spacing=1):
 
     return fc
 
+def spectral_gradient_extraction(mp, fc, spacing=1):
+    """
+    Extract positive spectral gradients.
+    Minimal implementation of baumgartner2014_gradientextraction.
+
+    Parameters
+    ----------
+    mp : ndarray
+        Spectral magnitude profile in dB, shape (n_dirs, n_freqs, n_ears)
+    fc : ndarray
+        Center frequencies in Hz
+    spacing : float
+        Tonotopical spacing between neurons in ERBs
+
+    Returns
+    -------
+    gp : ndarray
+        Positive spectral gradient profile, shape (n_dirs, n_freqs-dgpt2, n_ears)
+    gfc : ndarray
+        Center frequencies of gradient profile
+    """
+    # Compute ERB bandwidths
+    erb = 24.7 + fc / 9.265
+    # Tonotopical distance between type IV and II neurons
+    dgpt2 = int(round(np.mean(erb[1:] / np.diff(fc)) * spacing))
+
+    # Gradient computation: gp[b] = c4 * mp[b+dgpt2] - c2 * mp[b]
+    gp = mp[:, dgpt2:, :] - mp[:, :-dgpt2, :]
+
+    # Positive gradient extraction: set negative values to zero
+    gp[gp < 0] = 0
+
+    # New center frequencies (geometric mean)
+    gfc = np.sqrt(fc[:-dgpt2] * fc[dgpt2:])
+
+    return gp, gfc
+
 def gammatone(
     fc,
     fs,

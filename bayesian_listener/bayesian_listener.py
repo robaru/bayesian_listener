@@ -88,6 +88,8 @@ class BayesianListener:
                                        axis=-1)
         model.coords = coords_new
         model.freqs = self.freqs
+        model.use_spectral_gradient = self.use_spectral_gradient
+        model._parameters = self._parameters
         # model.coords.plot(model.spectral_cues[:, 5, 0])
         # self.coords.plot(self.spectral_cues[:, 5, 0])
 
@@ -98,24 +100,52 @@ class BayesianListener:
                          spectral_range=[7e2, 18e3],
                          interpolation='SH',
                          use_cache=True,
-                         force_recompute=False):
+                         force_recompute=False,
+                         use_spectral_gradient=False):
         """
-        delegates to cached or direct computation of spatial features and
-        templates.
+        Compute spatial features (ITD, ILD, spectral cues) and templates.
+
+        Parameters
+        ----------
+        spectral_range : list of float, default=[7e2, 18e3]
+            Frequency range [low, high] in Hz for spectral cues
+        interpolation : str, default='SH'
+            Interpolation method for template ('SH' for spherical harmonics)
+        use_cache : bool, default=True
+            Whether to use cached features if available
+        force_recompute : bool, default=False
+            If True, recompute even if cache exists (updates cache)
+        use_spectral_gradient : bool, default=False
+            If True, extract positive spectral gradients instead of amplitudes
+            (Baumgartner et al. 2014). Caching is automatically disabled.
+
+        Notes
+        -----
+        Caching is automatically disabled when use_spectral_gradient=True.
         """
         assert(self.sofa_file is not None)
+
+        # Disable caching if spectral gradient is enabled
+        if use_spectral_gradient:
+            use_cache = False
 
         if use_cache:
             return self._load_or_compute_features(spectral_range,
                                                   interpolation,
                                                   force_recompute)
         else:
-            return self._compute_features(spectral_range, interpolation)
+            return self._compute_features(spectral_range,
+                                          interpolation,
+                                          use_spectral_gradient)
 
     # pre-compute features for faster inference
     def _compute_features(self,
                           spectral_range = [7e2, 18e3],
-                          interpolation='SH'):
+                          interpolation='SH',
+                          use_spectral_gradient=False):
+        # Store flag for use in interpolate()
+        self.use_spectral_gradient = use_spectral_gradient
+
         # normalize hrirs to frontal position
         _, idx = self.coords.find(Coordinates(positions=np.array([1, 0, 0])))
         hrirs_temp = self.hrir / np.max(np.abs(self.hrir[idx]))
@@ -182,6 +212,11 @@ class BayesianListener:
         rms = np.sqrt(np.mean(hrirs_filt**2, axis=-1))
         # -> (n_dirs, n_freqs, n_ears)
         spectral_amps = utils.mag2db(rms).transpose(1, 0, 2)
+
+        # Apply spectral gradient extraction if enabled
+        if self.use_spectral_gradient:
+            spectral_amps, self.freqs = utils.spectral_gradient_extraction(
+                spectral_amps, self.freqs)
 
         self.spectral_cues = spectral_amps
 
@@ -267,7 +302,7 @@ class BayesianListener:
               target = None,
               repetitions = 50,
               seed = None,
-              prior = 'horizontal', 
+              prior = 'horizontal',
               store_posterior = False):
         np.random.seed(seed)
 
@@ -340,7 +375,7 @@ class BayesianListener:
             posterior = np.zeros((target_num, repetitions, template_num))
         else:
             posterior_idx = np.zeros((target_num, repetitions), dtype=np.int32)
-    
+
         posterior = np.zeros((target_num, repetitions, template_num))
 
         if repetitions > 1:

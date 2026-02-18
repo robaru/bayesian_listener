@@ -67,3 +67,42 @@ Ready to contribute? Here's how to set up `bayesian_listener_package` for local 
     $ git push origin name-of-your-bugfix-or-feature
 
 7. Submit a pull request on the develop branch through the GitHub website.
+
+
+
+Keep your branch up to date with rebase
+------------
+Before submitting your pull request, make sure your branch is up to date with
+the latest ``develop`` branch using rebase rather than merge. This keeps the
+commit history clean and linear::
+
+    $ git fetch origin
+    $ git rebase origin/develop
+
+If conflicts arise, Git will pause and indicate the conflicting files. For each
+conflict:
+
+1. Open the file and resolve the conflict manually.
+2. Stage the resolved file::
+
+    $ git add <conflicted-file>
+
+3. Continue the rebase::
+
+    $ git rebase --continue
+
+Repeat until all conflicts are resolved. If at any point you want to start
+over::
+
+    $ git rebase --abort
+
+Once the rebase is complete, push your updated branch. Since rebase rewrites
+commit history, a force push is required::
+
+    $ git push --force-with-lease origin name-of-your-bugfix-or-feature
+
+.. note::
+    Use ``--force-with-lease`` instead of ``--force``. It is a safer option
+    that prevents overwriting changes if someone else has pushed to the same
+    branch in the meantime.
+

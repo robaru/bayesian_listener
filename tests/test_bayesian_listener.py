@@ -68,7 +68,7 @@ def test_model_single():
     # Compare with fixed expected spherical coordinates (azimuth, elevation)
     # Coordinates(sofa_file).sph()[260, :] -> array([125.,   0.])
     expected_dir_sph = np.array([[126.871232,   0.966419]])
-    np.testing.assert_allclose(estimated_dir.squeeze(), expected_dir_sph, rtol=1e-2)
+    np.testing.assert_allclose(estimated_dir.squeeze(), expected_dir_sph.squeeze(), rtol=1e-2)
 
 def test_interp():
     """Test SHMAX interpolation produces valid template features."""

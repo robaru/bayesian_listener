@@ -3,6 +3,7 @@ The following describes the BayesianListener, which is the core auditory model.
 """
 import sofar
 import numpy as np
+import pyfar as pf
 import matplotlib.pyplot as plt
 from scipy.signal import lfilter
 from scipy.special import logsumexp
@@ -27,7 +28,8 @@ class BayesianListener:
 
         self.hrir = self.sofa_data.Data_IR
         self.fs = int(self.sofa_data.Data_SamplingRate)
-        self.coords = Coordinates(sofa_file = sofa)
+        self.coords = pf.io.read_sofa(self.sofa_file)[1]
+
         # noise parameters
         self.parameters = {
             "sigma_itd": 0.569,
@@ -73,6 +75,7 @@ class BayesianListener:
 
         resampled_cues, coords_new = resample.resample(cues_list,
                                                        self.coords,
+                                                       self.interpolation_grid,
                                                        method=interpolation)
 
         # Unpack results
@@ -92,12 +95,14 @@ class BayesianListener:
     def prepare_features(self,
                          spectral_range=[7e2, 18e3],
                          interpolation='SH',
+                         interpolation_grid=None,
                          use_cache=True,
                          force_recompute=False):
         """
         delegates to cached or direct computation of spatial features and
         templates.
         """
+        self.interpolation_grid = interpolation_grid
         assert(self.sofa_file is not None)
 
         if use_cache:
@@ -112,7 +117,8 @@ class BayesianListener:
                           spectral_range = [7e2, 18e3],
                           interpolation='SH'):
         # normalize hrirs to frontal position
-        _, idx = self.coords.find(Coordinates(positions=np.array([1, 0, 0])))
+        coords2find = pf.Coordinates.from_cartesian(1, 0, 0)
+        idx, _ = self.coords.find_nearest(coords2find)
         hrirs_temp = self.hrir / np.max(np.abs(self.hrir[idx]))
 
         a = 32.5e-6
@@ -305,7 +311,7 @@ class BayesianListener:
             elif prior == 'horizontal':
                 # Horizontal bias prior:
                 # Gaussian centered on horizontal plane (elevation = 0°)
-                sph = self.template.coords.convert('spherical')
+                sph = self.template.coords.spherical_elevation
                 prior = np.exp(
                     -0.5 * (np.rad2deg(sph[:, 1]) / sigmas["sigma_prior"])**2,
                     )
@@ -421,7 +427,7 @@ class BayesianListener:
 
         assert(trials > 0)
         estimations = np.zeros((trials, repetitions, 3))
-        coords_temp = self.template.coords.convert('cartesian')
+        coords_temp = self.template.coords.cartesian
         for t in range(trials):
             for r in range(repetitions):
                 # Decision stage
@@ -437,11 +443,14 @@ class BayesianListener:
                 estimations[:, rt, :] = utils.scatter_von_mises(
                     estimations[:, rt, :], sigma_motor, seed=seed)
 
-        return estimations
+        return pf.Coordinates.from_cartesian(estimations[..., 0],
+                                             estimations[..., 1],
+                                             estimations[..., 2])
 
     def plot_cues(self, title='', fig=None, ax=None, clim=None, elev_min=None):
         side = 0 # left/right channel
-        dirs = self.coords.sph()
+        dirs = self.coords.spherical_elevation
+        dirs[:, 0:2] = np.rad2deg(dirs[:, 0:2])
         # select directions with azimuth almost zero (median frontal plane)
         median_idx = np.abs(dirs[:, 0] - 0) < 2
         elevations = dirs[median_idx,1]
@@ -481,14 +490,33 @@ class BayesianListener:
         ax.set_xticklabels([f'{freq:.0f}' for freq in [100, 1e3, 5e3, 1e4]])
         ax.set_yticks(np.arange(len(elevations)))
         ax.set_yticklabels([f'{elev:.0f}' for elev in elevations])
+        plt.show()
 
         return fig, ax
 
     def plot_post(self, posterior, estimations):
         amps = posterior.squeeze()
-        self.template.coords.plot(np.maximum(amps,
-                                             np.log(np.finfo(amps.dtype).eps)),
-                                             estimations.squeeze())
 
+        ax = self.template.coords.show(
+                c=np.maximum(amps, np.log(np.finfo(amps.dtype).eps)),
+                s=20,
+                alpha=.5,
+                label='Log posterior')
 
+        ax.plot([0, 1], [0, 0], zs=[0, 0], c='red', label='Front direction')
+
+        if estimations is not None:
+            ax.plot(xs=[0, estimations.x.squeeze()],
+                    ys=[0, estimations.y.squeeze()],
+                    zs=[0, estimations.z.squeeze()],
+                    c='blue',
+                    label='Estimated direction',
+                    )
+
+        ax.view_init(elev=20, azim=35)
+        ax.set_box_aspect([1, 1, 1])
+        cbar = plt.colorbar(ax.collections[0], ax=ax, orientation='vertical')
+        cbar.set_label('Values')
+        ax.legend()
+        plt.show()
 

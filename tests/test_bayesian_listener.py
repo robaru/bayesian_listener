@@ -1,5 +1,6 @@
 import pytest
 import numpy as np
+import pyfar as pf
 from pathlib import Path
 import urllib.request
 from bayesian_listener import BayesianListener
@@ -54,24 +55,20 @@ def test_model_single():
     # Disable motor noise for deterministic test
     estimation = am.estimate(posterior, sigma_motor=0, seed=seed)
 
-    # Get original and estimated directions in spherical coordinates
-    estimated_coords = Coordinates(
-        sofa_file=None,
-        positions=estimation[:, 0, :],
-        convention='cartesian'
-    )
-    estimated_dir = estimated_coords.sph()
+    estimated_dir = np.rad2deg(estimation.spherical_elevation[..., 0:2])
+
+    # Check estimate return type
+    assert isinstance(estimation, pf.Coordinates)
 
     # Verify shape
-    assert estimation.shape == (1, 1, 3)
-    assert np.allclose(np.linalg.norm(estimation[0, 0, :]), 1.0, atol=0.1)
+    assert estimation.cartesian.shape == (1, 1, 3)
+    assert np.allclose(np.linalg.norm(estimation.cartesian[0, 0, :]),
+                       1.0, atol=0.1)
 
     # Compare with fixed expected spherical coordinates (azimuth, elevation)
-    # true location
     # Coordinates(sofa_file).sph()[260, :] -> array([125.,   0.])
     expected_dir_sph = np.array([[126.871232,   0.966419]])
-
-    np.testing.assert_allclose(estimated_dir, expected_dir_sph, rtol=1e-2)
+    np.testing.assert_allclose(estimated_dir.squeeze(), expected_dir_sph.squeeze(), rtol=1e-2)
 
 def test_interp():
     """Test SHMAX interpolation produces valid template features."""

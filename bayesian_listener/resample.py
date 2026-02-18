@@ -13,112 +13,6 @@ import warnings
 # SPHERICAL INTERPOLATION
 # -----------------------------------------------------------------------------
 
-# as in barumerli2023
-def resample_barumerli2023(values,
-                           coords_in,
-                           dirs = None,
-                           flag_regularisation = True):
-    """
-    Resample using spherical harmonics as in Barumerli et al. 2023.
-
-    Parameters
-    ----------
-    values : array or list of arrays
-        Single cue array of shape (n_dirs, ...) or list of cue arrays.
-        If list, each array must have shape (n_dirs, ...)
-        where first dimension matches.
-    coords_in : Coordinates
-        Source coordinates
-    dirs : array or Coordinates, optional
-        Target directions. If None, uses t-design with 64 points
-    flag_regularisation : bool
-        Whether to use Tikhonov regularization
-
-    Returns
-    -------
-    values_out : array or list of arrays
-        Resampled cues. Returns same type (single array or list) as input.
-    coords_out : Coordinates
-        Output coordinates
-    """
-    N_sph = 15
-
-    # Check if input is a list of cues
-    if isinstance(values, (list, tuple)):
-        cues = values
-        passed_list = True
-    else:
-        cues = [values]
-        passed_list = False
-
-    if dirs is None:
-        # %% Generate t-design points
-        # the advantage of using this is that
-        # the weights are equal when integrating
-        dirs = spaudiopy.grids.load_n_design(64)# 2112 equally distant points
-
-    # assert(N_SH < N_dirs, ...
-    #     ['Spherical harmonics: beware that the number of provided ',...
-    #     'coordinates is too low to obtain a precise interpolation'])
-
-    dirs_sph = spaudiopy.utils.cart2dir(dirs[:, 0], dirs[:, 1], dirs[:, 2])
-    dirs_SH = np.transpose([dirs_sph[0], dirs_sph[1]])
-
-    # transform signal to SH domain
-    c = coords_in.convert('spherical')
-    dirs_original = c[:, (0, 1)]
-
-    # move to navigation coordinates
-    azi = dirs_original[:, 0]  # must be in [0, 2*pi]
-    ele = dirs_original[:, 1]
-    if np.any(ele < 0):
-        ele = ele + np.pi/2 # must be in [0, pi].
-
-    zen = np.pi - ele
-
-    # get SH basis on new directions
-    int_new = spaudiopy.sph.sh_matrix(N_sph, dirs_SH[:, 0],
-                                      dirs_SH[:, 1],
-                                      sh_type='real')
-
-    # Ensure all cues are at least 2D
-    cues = [c[:, np.newaxis] if c.ndim == 1 else c for c in cues]
-
-    if not flag_regularisation:
-        # get SH matrix for input positions and transform to SH domain
-        cues_SH = [spaudiopy.sph.sht(c, N_sph, azi, zen, 'real') for c in cues]
-    else:
-        # regularization
-        lambda_val = 4.0
-        SIG = np.eye((N_sph+1)**2)
-        SIG[:(2+1)**2,:(2+1)**2] = 0
-
-        # get SH basis on old directions
-        Y_N_tik = spaudiopy.sph.sh_matrix(N_sph, azi, zen, 'real')
-        # Compute regularized inverse once
-        Y_inv_reg = np.linalg.solve(
-            np.transpose(Y_N_tik)@Y_N_tik+lambda_val*SIG,
-            np.transpose(Y_N_tik))
-        # Transform all cues to SH domain
-        cues_SH = [Y_inv_reg @ c for c in cues]
-
-    # interpolate all cues
-    cues_out = [int_new @ c_SH for c_SH in cues_SH]
-
-    # remove bottom as done in AMT model
-    # commented out otherwise fitting does not work
-    # idx = dirs[:, 2] > -.5
-    # dirs = dirs[idx, :]
-    # cues_out = [c[idx,:] for c in cues_out]
-
-    coords_out = Coordinates(positions = dirs, convention = 'cartesian')
-
-    # Return in same format as input
-    if not passed_list:
-        cues_out = cues_out[0]
-
-    return cues_out, coords_out
-
 # helpers
 def build_Y(dirs, N):
     """
@@ -192,103 +86,6 @@ def interpolate_HRTF(query_dirs, C, N):
     Yq = build_Y(query_dirs, N)
     return Yq @ C
 
-# this is the first attempt to interpolate with SH
-def resample_old(values, coords_in, dirs = None, plot_grid=False):
-    """
-    Resample function with regularisation and control on condition number.
-
-    :param values: Description
-    :param coords_in: Description
-    :param dirs: Description
-    :param plot_grid: Description
-    """
-    # N_sph = 15
-
-    if dirs is None:
-        # %% Generate t-design points
-        # the advantage of using this is that
-        # the weights are equal when integrating
-        dirs = spaudiopy.grids.load_n_design(64)# 2112 equally distant points
-    else:
-        assert(isinstance(dirs, Coordinates))
-        dirs = dirs.convert('cartesian')
-
-    dirs_sph = spaudiopy.utils.cart2dir(dirs[:, 0], dirs[:, 1], dirs[:, 2])
-    dirs_SH = np.transpose([dirs_sph[0], dirs_sph[1]])
-
-    # transform signal to SH domain
-    c = coords_in.convert('spherical')
-    dirs_original = c[:, (0, 1)]
-
-    # move to navigation coordinates
-    # azi = dirs_original[:, 0]  # must be in [0, 2*pi]
-    ele = dirs_original[:, 1]
-    if np.any(ele < 0):
-        ele = ele + np.pi/2 # must be in [0, pi].
-
-    zen = np.pi - ele
-
-    ###
-    #  Let's identify the minimum order to adjust the HRTF spherical grid
-    ###
-    dirs_meas = dirs_original
-    dirs_meas[:, 1] = zen
-
-    N_low = find_max_order(dirs_meas)
-    # print(N_low)
-
-    # 2. build Y_low for measured directions
-    Y_low = build_Y(dirs_meas, N_low)
-    # 3. solve for low-order coefficients (shape: (N_low+1)^2 × F)
-    C_low = solve_sh(Y_low, values)
-
-    # 4. generate low-order estimates at virtual points (V×F)
-    Y_low_virt = build_Y(dirs_SH, N_low)
-    H_low_virt = Y_low_virt @ C_low
-
-    ###
-    # let's interpolate the HRTF using high order while adding
-    # the points of the low SH resolution as compensation mechanism
-    ###
-
-    # 1. Find minimum z-coordinate from measured directions
-    coords_meas_cart = coords_in.convert('cartesian')
-    z_min_meas = np.min(coords_meas_cart[:, 2])
-
-    # 2. Select only virtual points below the minimum measured z-coordinate
-    missing_mask = dirs[:, 2] < z_min_meas
-
-    # Extract only the missing directions and their low-order estimates
-    dirs_missing = dirs_SH[missing_mask]
-    H_low_missing = H_low_virt[missing_mask]
-
-    # 3. Assemble full direction list: measured + missing only
-    full_dirs = np.concatenate([dirs_meas, dirs_missing], axis=0)    # (L+M)×2
-    full_H    = np.concatenate([values, H_low_missing], axis=0)      # (L+M)×F
-
-    # 4. find N_high so that cond(Y_full[N_high]) < cond_thresh
-    N_high = find_max_order(full_dirs, 3, 44)
-    # print(N_high)
-
-    # 5. build Y_high for full directions
-    Y_high = build_Y(full_dirs, N_high)
-
-    # 6. solve for final SH coefficients up to order N_high
-    C_high = solve_sh(Y_high, full_H)
-
-    # 7. interpolate
-    H_q = interpolate_HRTF(dirs_SH, C_high, N_high)
-
-    coords_out = Coordinates(positions = dirs, convention = 'cartesian')
-    values_out = H_q
-
-    # Plot grid if requested
-    if plot_grid:
-        plot_resampling_grid(coords_meas_cart, dirs, missing_mask, z_min_meas)
-
-    # return values
-    return values_out, coords_out
-
 # method from Fabian in test_resampling
 def complement_sampling(coordinates):
     """
@@ -347,10 +144,11 @@ def resample_two_step(cues, coordinates, template, second_step):
     cues : array, list of arrays
         Cues as an array or list of arrays. For each array, ``shape[-2]`` must
         equal the number of source positions in `coordinates`.
-    coordinates : pyfar.Coordinates or Coordinates
+    coordinates : pyfar.Coordinates
         Coordinates of the cues
-    template : pyfar.Coordinates or numpy array
-        Coordinates to which the cues are interpolated
+    template : pyfar.Coordinates or `None`, optional
+        Coordinates to which the cues are interpolated to. If `None` (default),
+        uses spherical n-design of 64th degree.
     second_step : string
         'SH' or 'Barycentric' (case insensitive)
 
@@ -359,6 +157,8 @@ def resample_two_step(cues, coordinates, template, second_step):
     cues : array, list of arrays
         Resampled cues. For each array, ``shape[-2]`` equal the number of
         source positions in `template`.
+    template_coords : pyfar.Coordinates
+        Output coordinates of resampled cues.
     """
 
     # check input format
@@ -368,15 +168,20 @@ def resample_two_step(cues, coordinates, template, second_step):
     else:
         passed_list = True
 
-    # Convert custom Coordinates to pyfar.Coordinates if needed
-    if isinstance(coordinates, Coordinates):
-        coords_cart = coordinates.convert('cartesian')
-        coordinates = pf.Coordinates.from_cartesian(coords_cart[:, 0],
-                                                    coords_cart[:, 1],
-                                                    coords_cart[:, 2])
+    # Check if coordinates is a pf.Coordinates object
+    if not isinstance(coordinates, pf.Coordinates):
+        raise TypeError('`coordinates` must be a pyfar.Coordinates object')
 
-    # Convert template to pyfar.Coordinates if it's a numpy array
-    if isinstance(template, np.ndarray):
+    # Check if template is a pf.Coordinates object or `None
+    if template is not None and not isinstance(template, pf.Coordinates):
+        raise TypeError(
+            '`template` must be a pyfar.Coordinates object or `None`')
+
+    if template is None:
+        # %% Generate t-design points
+        # the advantage of using this is that
+        # the weights are equal when integrating
+        template = spaudiopy.grids.load_n_design(64)# 2112 equally distant points
         template = pf.Coordinates.from_cartesian(template[:, 0],
                                                  template[:, 1],
                                                  template[:, 2])
@@ -457,9 +262,122 @@ def resample_two_step(cues, coordinates, template, second_step):
     if not passed_list:
         cues = cues[0]
 
-    return cues
+    return cues, template
 
-def resample(cues, coordinates, method='SH'):
+# as in barumerli2023
+def resample_barumerli2023(values,
+                           coords_in,
+                           template=None,
+                           flag_regularisation = True):
+    """
+    Resample using spherical harmonics as in Barumerli et al. 2023.
+
+    Parameters
+    ----------
+    values : array or list of arrays
+        Single cue array of shape (n_dirs, ...) or list of cue arrays.
+        If list, each array must have shape (n_dirs, ...)
+        where first dimension matches.
+    coords_in : pyfar.Coordinates
+        Source coordinates
+    template : pyfar.Coordinates or `None`, optional
+        Coordinates to which the cues are interpolated to. If `None` (default),
+        uses spherical n-design of 64th degree.
+    flag_regularisation : bool
+        Whether to use Tikhonov regularization
+
+    Returns
+    -------
+    values_out : array or list of arrays
+        Resampled cues. Returns same type (single array or list) as input.
+    template_coords : pyfar.Coordinates
+        Output coordinates of resampled cues.
+    """
+    N_sph = 15
+
+    # Check if input is a list of cues
+    if isinstance(values, (list, tuple)):
+        cues = values
+        passed_list = True
+    else:
+        cues = [values]
+        passed_list = False
+
+    # Check if coordinates is a pf.Coordinates object
+    if not isinstance(coords_in, pf.Coordinates):
+        raise TypeError('`coordinates` must be a pyfar.Coordinates object')
+
+    # Check if template is a pf.Coordinates object or `None``
+    if template is not None and not isinstance(template, pf.Coordinates):
+        raise TypeError(
+            '`template` must be a pyfar.Coordinates object or `None`')
+
+    if template is None:
+        # %% Generate t-design points
+        # the advantage of using this is that
+        # the weights are equal when integrating
+        dirs = spaudiopy.grids.load_n_design(64)# 2112 equally distant points
+        template = pf.Coordinates.from_cartesian(dirs[:, 0],
+                                                 dirs[:, 1],
+                                                 dirs[:, 2])
+
+    dirs_sph = template.spherical_elevation
+    azimuth = dirs_sph[:, 0]
+    colatidude = dirs_sph[:, 1]
+
+    # assert(N_SH < N_dirs, ...
+    #     ['Spherical harmonics: beware that the number of provided ',...
+    #     'coordinates is too low to obtain a precise interpolation'])
+
+    dirs_SH = np.transpose([azimuth, colatidude])
+
+    # transform signal to SH domain
+    c = coords_in.spherical_colatitude
+    azi = c[..., 0]
+    zen = c[..., 1]
+
+    # get SH basis on new directions
+    int_new = spaudiopy.sph.sh_matrix(N_sph, dirs_SH[:, 0],
+                                      dirs_SH[:, 1],
+                                      sh_type='real')
+
+    # Ensure all cues are at least 2D
+    cues = [c[:, np.newaxis] if c.ndim == 1 else c for c in cues]
+
+    if not flag_regularisation:
+        # get SH matrix for input positions and transform to SH domain
+        cues_SH = [spaudiopy.sph.sht(c, N_sph, azi, zen, 'real') for c in cues]
+    else:
+        # regularization
+        lambda_val = 4.0
+        SIG = np.eye((N_sph+1)**2)
+        SIG[1:(2+1)**2,1:(2+1)**2] = 0
+
+        # get SH basis on old directions
+        Y_N_tik = spaudiopy.sph.sh_matrix(N_sph, azi, zen, 'real')
+        # Compute regularized inverse once
+        Y_inv_reg = np.linalg.solve(
+            np.transpose(Y_N_tik)@Y_N_tik+lambda_val*SIG,
+            np.transpose(Y_N_tik))
+        # Transform all cues to SH domain
+        cues_SH = [Y_inv_reg @ c for c in cues]
+
+    # interpolate all cues
+    cues_out = [int_new @ c_SH for c_SH in cues_SH]
+
+    # remove bottom as done in AMT model
+    # commented out otherwise fitting does not work
+    # idx = dirs[:, 2] > -.5
+    # dirs = dirs[idx, :]
+    # cues_out = [c[idx,:] for c in cues_out]
+
+    # Return in same format as input
+    if not passed_list:
+        cues_out = cues_out[0]
+
+    return cues_out, template
+
+def resample(cues, coordinates, template=None, method='SH'):
     """
     Unified resample interface that handles both single and multiple cues.
 
@@ -469,8 +387,12 @@ def resample(cues, coordinates, method='SH'):
         Single cue array of shape (n_dirs, ...) or list of cue arrays.
         If list, each array must have shape (n_dirs, ...)
         where first dimension matches.
-    coordinates : Coordinates
+    coordinates : pf.Coordinates
         Source coordinates
+    termplate : pyfar.Coordinates or `None`, optional
+        Coordinates to which the cues are interpolated to. If `None` (default),
+        uses 64th degree spherical n-design for methods 'SH', 'barycentric', and
+        'barumerli2023'.
     method : str
         Resampling method: 'SH', 'barycentric', or 'barumerli2023'
 
@@ -483,20 +405,15 @@ def resample(cues, coordinates, method='SH'):
     template_coords : Coordinates
         Output coordinates
     """
-    template = spaudiopy.grids.load_n_design(64)
-
     if method.lower() == 'barycentric':
-        result = resample_two_step(cues, coordinates, template, 'barycentric')
-        template_coords = Coordinates(positions=template,
-                                      convention='cartesian')
+        result, template_coords = resample_two_step(cues, coordinates,
+                                                    template, 'barycentric')
     elif method.lower() == 'sh':
-        result = resample_two_step(cues, coordinates, template, 'sh')
-        template_coords = Coordinates(positions=template,
-                                      convention='cartesian')
+        result, template_coords = resample_two_step(cues, coordinates,
+                                                    template, 'sh')
     elif method.lower() == 'shmax':
-        result = resample_two_step(cues, coordinates, template, 'shmax')
-        template_coords = Coordinates(positions=template,
-                                      convention='cartesian')
+        result, template_coords = resample_two_step(cues, coordinates,
+                                                    template, 'shmax')
     elif method.lower() == 'barumerli2023':
         result, template_coords = resample_barumerli2023(cues,
                                                          coordinates,

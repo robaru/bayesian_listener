@@ -97,16 +97,16 @@ def test_model_multiple():
     targets = all_targets[target_indices, :]
 
     # Get true target positions in spherical coordinates
-    true_coords = am.coords.sph()
+    true_coords = am.coords.spherical_elevation
     true_dirs = true_coords[target_indices, :]  # (2, 2) -> azimuth, elevation
 
     # Run inference: 2 targets x 2 repetitions
     posterior = am.infer(targets, repetitions=2, seed=42)
-    estimation = am.estimate(posterior, sigma_motor=0)
+    estimation = am.estimate(posterior, sigma_motor=0, seed=42)
 
-    # Verify shapes: (n_targets, n_repetitions, 3)
-    assert estimation.shape == (2, 2, 3), \
-        f"Expected shape (2, 2, 3), got {estimation.shape}"
+    # Verify shapes: (n_targets, n_repetitions)
+    assert estimation.cshape == (2, 2), \
+        f"Expected shape (2, 2), got {estimation.shape}"
 
     # All estimated directions should be unit vectors
     norms = np.linalg.norm(estimation, axis=-1)
@@ -118,17 +118,12 @@ def test_model_multiple():
     tolerance_deg = 5
     for t_idx in range(2):
         for r_idx in range(2):
-            est_coord = Coordinates(
-                sofa_file=None,
-                positions=estimation[t_idx, r_idx, :].reshape(1, 3),
-                convention='cartesian',
-            )
-            est_sph = est_coord.sph()  # (1, 2) -> azimuth, elevation
+            est_sph = estimation.spherical_elevation  # (1, 2) -> azimuth, elevation
 
-            az_err = abs(est_sph[0, 0] - true_dirs[t_idx, 0])
+            az_err = abs(est_sph[0, 0, 0] - true_dirs[t_idx, 0])
             # Handle azimuth wraparound
             az_err = min(az_err, 360 - az_err)
-            el_err = abs(est_sph[0, 1] - true_dirs[t_idx, 1])
+            el_err = abs(est_sph[0, 1, 0] - true_dirs[t_idx, 1])
 
             angular_err = np.sqrt(az_err**2 + el_err**2)
             if angular_err > tolerance_deg:

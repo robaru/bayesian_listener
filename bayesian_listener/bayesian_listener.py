@@ -125,6 +125,8 @@ class BayesianListener:
         """Compute spatial features and templates, with optional caching."""
         assert(self.sofa_file is not None)
 
+        self.interpolation_grid = interpolation_grid
+
         if use_cache:
             return self._load_or_compute_features(spectral_range,
                                                   interpolation,

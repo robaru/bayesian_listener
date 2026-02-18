@@ -269,7 +269,7 @@ class BayesianListener:
               repetitions = 50,
               seed = None,
               prior = 'horizontal'):
-        np.random.seed(seed)
+        rng = np.random.default_rng(seed)
 
 
         # prepare features
@@ -342,7 +342,7 @@ class BayesianListener:
             L = np.linalg.cholesky(sigma)  # L @ L.T = sigma
             for t in range(target_num):
                 ts = np.tile(target_feat[t,:], [repetitions, 1])
-                xs = ts + np.random.normal(size=ts.shape) @ L.T
+                xs = ts + rng.normal(size=ts.shape) @ L.T
                 loglik = utils.multiple_logpdfs_vec_input_single_cov(
                     xs,template_feat, logdet, Us).squeeze()
                 logpost = loglik + np.log(prior)
@@ -360,7 +360,7 @@ class BayesianListener:
             for t in range(target_num):
                 # for ta in range(target_num):
                 # AWGN NOISE
-                x = np.random.multivariate_normal(target_feat[t,:], sigma)
+                x = rng.multivariate_normal(target_feat[t,:], sigma)
 
                 # COMPUTE POSTERIOR
                 # using vectorised solution
@@ -401,7 +401,7 @@ class BayesianListener:
         # Results
         return posterior
 
-    def estimate(self, posterior, sigma_motor=None):
+    def estimate(self, posterior, sigma_motor=None, seed=None):
         """
         Estimate directions from posterior distribution.
 
@@ -413,6 +413,8 @@ class BayesianListener:
             Motor noise standard deviation in degrees.
             If None, uses self.parameters['sigma_motor'].
             If False or 0, motor noise is disabled.
+        seed : int or None, optional
+            Fixed random seed for reproducibility.
 
         Returns
         -------
@@ -439,7 +441,7 @@ class BayesianListener:
         if sigma_motor not in [False, 0]:
             for rt in range(repetitions):
                 estimations[:, rt, :] = utils.scatter_von_mises(
-                    estimations[:, rt, :], sigma_motor)
+                    estimations[:, rt, :], sigma_motor, seed=seed)
 
         return pf.Coordinates.from_cartesian(estimations[..., 0],
                                              estimations[..., 1],

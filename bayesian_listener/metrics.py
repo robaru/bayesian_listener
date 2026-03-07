@@ -117,9 +117,6 @@ def localization_error(targets, estimations, metric, auxiliary_output=False):
     return (value, aux_out) if auxiliary_output else value
 
 
-
-
-
 # -----------------------------------------------------------------------------
 # Metric Registration System
 
@@ -240,11 +237,8 @@ def wrap_polar_angle(angle_rad):
     return (angle_rad + np.pi / 2) % (2 * np.pi) - np.pi / 2
 
 
-
-
 # -----------------------------------------------------------------------------
 # Metric Functions
-
 
 @register_metric(
     name="rmsL",
@@ -318,7 +312,6 @@ def rmsPmedianlocal(true, est):
 
     local_polar_diff = polar_diff[local_mask]
     return np.sqrt(np.mean(local_polar_diff ** 2))
-
 
 
 @register_metric(

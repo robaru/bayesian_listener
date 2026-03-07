@@ -3,7 +3,7 @@ This module contains functions to compute localization errors based on a set
 of target and response directions.
 """
 import numpy as np
-from bayesian_listener.coordinates import Coordinates
+import pyfar as pf
 
 
 def localization_error(targets, estimations, metric, auxiliary_output=False):
@@ -13,9 +13,9 @@ def localization_error(targets, estimations, metric, auxiliary_output=False):
 
     Parameters
     ----------
-    targets : Coordinates
+    targets : pyfar.Coordinates
         The target (reference) coordinates.
-    estimations : Coordinates
+    estimations : pyfar.Coordinates
         The estimated coordinates to compare against.
     metric : str or callable
         The metric to use for error computation.
@@ -23,14 +23,9 @@ def localization_error(targets, estimations, metric, auxiliary_output=False):
             You can view available metrics using describe_metrics()
             and get specific details with describe_metrics(name).
         -   If a callable, it must be a function that takes
-            two np.ndarray arguments (targets, estimations),
-            where each argument is shaped (n, 3) and represents either
-            angular or Cartesian coordinates (e.g. (radians, radians, meters)
-            or (meters, meters, meters)).
-            In this case, the user is responsible for ensuring that
-            both localization_error() input Coordinates
-            (targets and estimations) are in the correct
-            coordinate system required by the callable metric function.
+            two pyfar.Coordinates arguments (targets, estimations).
+            In this case, the user is responsible that the correct
+            coordinate system and units are used.
             The callable should return either a single float (error value)
             or a tuple (error_value, auxiliary_data).
     auxiliary_output : bool, optional
@@ -66,20 +61,19 @@ def localization_error(targets, estimations, metric, auxiliary_output=False):
     {'confusion_count': 48, 'response_count': 512}
     """
     # Accept only Coordinates instances
-    if not isinstance(targets, Coordinates) or \
-       not isinstance(estimations, Coordinates):
+    if not isinstance(targets, pf.Coordinates) or \
+       not isinstance(estimations, pf.Coordinates):
         raise TypeError(
-            "Both targets and estimations must be Coordinates instances.")
+            "Both targets and estimations must be " \
+            "pyfar.Coordinates instances.")
 
-    x_tar = targets.positions
-    x_est = estimations.positions
-
-    if x_tar.shape != x_est.shape:
-        raise ValueError(f"Shape mismatch: {x_tar.shape} vs {x_est.shape}")
+    if targets.cshape != estimations.cshape:
+        raise ValueError(
+            f"Shape mismatch: {targets.cshape} vs {estimations.cshape}")
 
     # Case 1: metric is a custom function
     if callable(metric):
-        return metric(x_tar, x_est)
+        return metric(targets, estimations)
 
     # Case 2: metric is a string, but not registered in METRIC_FUNCTIONS
     if metric not in METRIC_FUNCTIONS:
@@ -99,8 +93,15 @@ def localization_error(targets, estimations, metric, auxiliary_output=False):
     # For the same reason, we assume units are coherent within the conventions.
 
     # Convert coordinates to the expected convention
-    converted_tar = targets.convert(expected_coord_convention)
-    converted_est = estimations.convert(expected_coord_convention)
+    if expected_coord_convention == 'cartesian':
+        converted_tar = targets.cartesian
+        converted_est = estimations.cartesian
+    elif expected_coord_convention == 'spherical':
+        converted_tar = targets.spherical_elevation
+        converted_est = estimations.spherical_elevation
+    else:  # expected_coord_convention == 'horizontal-polar'
+        converted_tar = targets.spherical_side
+        converted_est = estimations.spherical_side
 
     # Convert units if necessary
     # Coordinates class uses radians and meters internally,

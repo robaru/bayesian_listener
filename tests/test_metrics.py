@@ -7,7 +7,7 @@ localization_error function, and utility functions.
 """
 import pytest
 import numpy as np
-from bayesian_listener.coordinates import Coordinates
+import pyfar as pf
 from bayesian_listener.metrics import (
     localization_error,
     describe_metrics,
@@ -120,20 +120,21 @@ def test_all_metrics_registered():
 def test_localization_error_invalid_inputs():
     """Test localization_error raises TypeError for invalid inputs."""
     # Create valid Coordinates object
-    valid_coords = Coordinates(
-        positions=np.array([[0, 0, 1]]),
-        convention='cartesian',
+    valid_coords = pf.Coordinates.from_cartesian(
+        x=np.array([0]),
+        y=np.array([0]),
+        z=np.array([1]),
     )
 
     # Test with non-Coordinates inputs
-    with pytest.raises(TypeError, match="must be Coordinates instances"):
+    with pytest.raises(TypeError, match="must be pyfar.Coordinates instances"):
         localization_error(
             np.array([[0, 0, 1]]),
             valid_coords,
             'rmsL',
         )
 
-    with pytest.raises(TypeError, match="must be Coordinates instances"):
+    with pytest.raises(TypeError, match="must be pyfar.Coordinates instances"):
         localization_error(
             valid_coords,
             np.array([[0, 0, 1]]),
@@ -143,13 +144,15 @@ def test_localization_error_invalid_inputs():
 
 def test_localization_error_shape_mismatch():
     """Test localization_error raises ValueError for shape mismatch."""
-    coords1 = Coordinates(
-        positions=np.array([[0, 0, 1], [1, 0, 0]]),
-        convention='cartesian',
+    coords1 = pf.Coordinates.from_cartesian(
+        x=np.array([0, 1]),
+        y=np.array([0, 0]),
+        z=np.array([1, 0]),
     )
-    coords2 = Coordinates(
-        positions=np.array([[0, 0, 1]]),
-        convention='cartesian',
+    coords2 = pf.Coordinates.from_cartesian(
+        x=np.array([0]),
+        y=np.array([0]),
+        z=np.array([1]),
     )
 
     with pytest.raises(ValueError, match="Shape mismatch"):
@@ -158,9 +161,10 @@ def test_localization_error_shape_mismatch():
 
 def test_localization_error_unknown_metric():
     """Test localization_error raises ValueError for unknown metric."""
-    coords = Coordinates(
-        positions=np.array([[0, 0, 1]]),
-        convention='cartesian',
+    coords = pf.Coordinates.from_cartesian(
+        x=np.array([0]),
+        y=np.array([0]),
+        z=np.array([1]),
     )
 
     with pytest.raises(ValueError, match="Unknown metric"):
@@ -170,13 +174,15 @@ def test_localization_error_unknown_metric():
 def test_localization_error_with_callable():
     """Test localization_error with custom callable metric function."""
     # Create simple test data
-    targets = Coordinates(
-        positions=np.array([[0, 0, 1], [1, 0, 0]]),
-        convention='cartesian',
+    targets = pf.Coordinates.from_cartesian(
+        x=np.array([0, 1]),
+        y=np.array([0, 0]),
+        z=np.array([1, 0]),
     )
-    estimations = Coordinates(
-        positions=np.array([[0, 0, 1], [0.9, 0.1, 0]]),
-        convention='cartesian',
+    estimations = pf.Coordinates.from_cartesian(
+        x=np.array([0, 0.9]),
+        y=np.array([0, 0.1]),
+        z=np.array([1, 0]),
     )
 
     # Define simple callable: Euclidean distance
@@ -210,19 +216,15 @@ def test_localization_error_with_callable():
 def test_localization_error_auxiliary_output():
     """Test auxiliary_output parameter returns extra information."""
     # Create test data in horizontal-polar
-    targets = Coordinates(
-        positions=np.array([
-            [0, 0, 1],      # lateral=0, polar=0
-            [0, np.pi, 1],  # lateral=0, polar=180
-        ]),
-        convention='horizontal-polar',
+    targets = pf.Coordinates.from_spherical_side(
+        lateral=np.array([0, 0]),
+        polar=np.array([0, np.pi]),
+        radius=np.array([1, 1]),
     )
-    estimations = Coordinates(
-        positions=np.array([
-            [0, 0, 1],
-            [0, 0, 1],  # This will be a quadrant error
-        ]),
-        convention='horizontal-polar',
+    estimations = pf.Coordinates.from_spherical_side(
+        lateral=np.array([0, 0]),
+        polar=np.array([0, 0]),  # This will be a quadrant error
+        radius=np.array([1, 1]),
     )
 
     # Test without auxiliary output
@@ -256,19 +258,19 @@ def test_localization_error_auxiliary_output():
 def test_rmsL_perfect_estimation():
     """Test rmsL returns zero for perfect lateral estimation."""
     # Create identical targets and estimations
-    positions = np.array([
-        [0, 0, 1],              # center
-        [np.pi/4, 0, 1],        # 45° right
-        [-np.pi/4, 0, 1],       # 45° left
-    ])
+    lateral = np.array([0, np.pi/4, -np.pi/4])  # 0°, 45° right, 45° left
+    polar = np.array([0, 0, 0])  # All at polar angle 0
+    radius = np.array([1, 1, 1])  # All at radius 1
 
-    targets = Coordinates(
-        positions=positions,
-        convention='horizontal-polar',
+    targets = pf.Coordinates.from_spherical_side(
+        lateral=lateral,
+        polar=polar,
+        radius=radius,
     )
-    estimations = Coordinates(
-        positions=positions.copy(),
-        convention='horizontal-polar',
+    estimations = pf.Coordinates.from_spherical_side(
+        lateral=lateral,
+        polar=polar,
+        radius=radius,
     )
 
     error = localization_error(targets, estimations, 'rmsL')
@@ -279,22 +281,20 @@ def test_rmsL_known_output():
     """Test rmsL with synthetic data producing known output."""
     # Create targets at center (lateral = 0)
     n_samples = 4
-    targets = Coordinates(
-        positions=np.array([
-            [0, 0, 1] for _ in range(n_samples)
-        ]),
-        convention='horizontal-polar',
+    targets = pf.Coordinates.from_spherical_side(
+        lateral=np.zeros(n_samples),
+        polar=np.zeros(n_samples),
+        radius=np.ones(n_samples),
     )
 
     # Create estimations with known lateral errors: [10°, -10°, 20°, -20°]
     # All within ±60° so all will be included
     lateral_errors_deg = np.array([10, -10, 20, -20])
     lateral_errors_rad = np.deg2rad(lateral_errors_deg)
-    estimations = Coordinates(
-        positions=np.array([
-            [lat, 0, 1] for lat in lateral_errors_rad
-        ]),
-        convention='horizontal-polar',
+    estimations = pf.Coordinates.from_spherical_side(
+        lateral=lateral_errors_rad,
+        polar=np.zeros(n_samples),
+        radius=np.ones(n_samples),
     )
 
     # Expected RMS: sqrt(mean([10², 10², 20², 20²])) = sqrt(250) degrees
@@ -308,21 +308,17 @@ def test_rmsL_known_output():
 def test_rmsL_outside_60deg_excluded():
     """Test rmsL excludes responses outside ±60° lateral."""
     # Create targets at center
-    targets = Coordinates(
-        positions=np.array([
-            [0, 0, 1],
-            [0, 0, 1],
-        ]),
-        convention='horizontal-polar',
+    targets = pf.Coordinates.from_spherical_side(
+        lateral=np.array([0, 0]),
+        polar=np.array([0, 0]),
+        radius=np.array([1, 1]),
     )
 
     # One estimation within ±60°, one outside
-    estimations = Coordinates(
-        positions=np.array([
-            [np.deg2rad(30), 0, 1],   # 30° - included
-            [np.deg2rad(70), 0, 1],   # 70° - excluded
-        ]),
-        convention='horizontal-polar',
+    estimations = pf.Coordinates.from_spherical_side(
+        lateral=np.array([np.deg2rad(30), np.deg2rad(70)]),
+        polar=np.array([0, 0]),
+        radius=np.array([1, 1]),
     )
 
     # Only the first error should be counted
@@ -335,18 +331,20 @@ def test_rmsL_outside_60deg_excluded():
 def test_rmsPmedianlocal_perfect_estimation():
     """Test rmsPmedianlocal returns zero for perfect estimation."""
     # Create central responses (lateral within ±30°)
-    positions = np.array([
-        [0, 0, 1],                    # center
-        [np.deg2rad(20), np.pi/2, 1], # 20° lateral, 90° polar
-    ])
+    lateral = np.array([0, np.deg2rad(20)])  # 0°, 20° lateral
+    polar = np.array([0, np.pi/2])  # 0°, 90° polar
+    radius = np.array([1, 1])  # All at radius 1
 
-    targets = Coordinates(
-        positions=positions,
-        convention='horizontal-polar',
+    targets = pf.Coordinates.from_spherical_side(
+        lateral=lateral,
+        polar=polar,
+        radius=radius,
     )
-    estimations = Coordinates(
-        positions=positions.copy(),
-        convention='horizontal-polar',
+
+    estimations = pf.Coordinates.from_spherical_side(
+        lateral=lateral,
+        polar=polar,
+        radius=radius,
     )
 
     error = localization_error(targets, estimations, 'rmsPmedianlocal')
@@ -356,26 +354,20 @@ def test_rmsPmedianlocal_perfect_estimation():
 def test_rmsPmedianlocal_known_output():
     """Test rmsPmedianlocal with synthetic data."""
     # Create targets at center with polar = 0
-    targets = Coordinates(
-        positions=np.array([
-            [0, 0, 1],                     # center
-            [np.deg2rad(15), 0, 1],        # 15° lateral
-            [np.deg2rad(-20), 0, 1],       # -20° lateral
-        ]),
-        convention='horizontal-polar',
+    targets = pf.Coordinates.from_spherical_side(
+        lateral=np.array([0, np.deg2rad(15), np.deg2rad(-20)]),
+        polar=np.array([0, 0, 0]),
+        radius=np.array([1, 1, 1]),
     )
 
     # Create estimations with polar errors: [30°, 45°, 60°]
     # All lateral responses within ±30°, all polar errors < 90°
     polar_errors_deg = np.array([30, 45, 60])
     polar_errors_rad = np.deg2rad(polar_errors_deg)
-    estimations = Coordinates(
-        positions=np.array([
-            [0, polar_errors_rad[0], 1],
-            [np.deg2rad(15), polar_errors_rad[1], 1],
-            [np.deg2rad(-20), polar_errors_rad[2], 1],
-        ]),
-        convention='horizontal-polar',
+    estimations = pf.Coordinates.from_spherical_side(
+        lateral=np.array([0, np.deg2rad(15), np.deg2rad(-20)]),
+        polar=polar_errors_rad,
+        radius=np.array([1, 1, 1]),
     )
 
     # Expected RMS of polar errors
@@ -388,21 +380,17 @@ def test_rmsPmedianlocal_known_output():
 def test_rmsPmedianlocal_excludes_large_polar_errors():
     """Test rmsPmedianlocal excludes polar errors >= 90°."""
     # Create targets with lateral within ±30°
-    targets = Coordinates(
-        positions=np.array([
-            [0, 0, 1],
-            [np.deg2rad(20), 0, 1],
-        ]),
-        convention='horizontal-polar',
+    targets = pf.Coordinates.from_spherical_side(
+        lateral=np.array([0, np.deg2rad(20)]),
+        polar=np.array([0, 0]),
+        radius=np.array([1, 1]),
     )
 
     # First has small polar error, second has large (>=90°)
-    estimations = Coordinates(
-        positions=np.array([
-            [0, np.deg2rad(30), 1],        # 30° error - included
-            [np.deg2rad(20), np.deg2rad(100), 1],  # 100° error - excluded
-        ]),
-        convention='horizontal-polar',
+    estimations = pf.Coordinates.from_spherical_side(
+        lateral=np.array([0, np.deg2rad(20)]),
+        polar=np.array([np.deg2rad(30), np.deg2rad(100)]),
+        radius=np.array([1, 1]),
     )
 
     # Only first error should count
@@ -415,23 +403,17 @@ def test_rmsPmedianlocal_excludes_large_polar_errors():
 def test_querrMiddlebrooks_zero_errors():
     """Test querrMiddlebrooks returns 0% for no quadrant errors."""
     # Create central responses with small polar errors
-    targets = Coordinates(
-        positions=np.array([
-            [0, 0, 1],
-            [np.deg2rad(15), 0, 1],
-            [np.deg2rad(-20), 0, 1],
-        ]),
-        convention='horizontal-polar',
+    targets = pf.Coordinates.from_spherical_side(
+        lateral=np.array([0, np.deg2rad(15), np.deg2rad(-20)]),
+        polar=np.array([0, 0, 0]),
+        radius=np.array([1, 1, 1]),
     )
 
     # Small polar errors (all < 90°)
-    estimations = Coordinates(
-        positions=np.array([
-            [0, np.deg2rad(30), 1],
-            [np.deg2rad(15), np.deg2rad(45), 1],
-            [np.deg2rad(-20), np.deg2rad(60), 1],
-        ]),
-        convention='horizontal-polar',
+    estimations = pf.Coordinates.from_spherical_side(
+        lateral=np.array([0, np.deg2rad(15), np.deg2rad(-20)]),
+        polar=np.array([np.deg2rad(30), np.deg2rad(45), np.deg2rad(60)]),
+        radius=np.array([1, 1, 1]),
     )
 
     error, aux = localization_error(
@@ -449,25 +431,21 @@ def test_querrMiddlebrooks_zero_errors():
 def test_querrMiddlebrooks_known_output():
     """Test querrMiddlebrooks with known quadrant error rate."""
     # Create 4 targets, all with lateral within ±30°
-    targets = Coordinates(
-        positions=np.array([
-            [0, 0, 1],
-            [np.deg2rad(10), 0, 1],
-            [np.deg2rad(-15), 0, 1],
-            [np.deg2rad(25), 0, 1],
-        ]),
-        convention='horizontal-polar',
+    targets = pf.Coordinates.from_spherical_side(
+        lateral=np.array([0, np.deg2rad(10), np.deg2rad(-15), np.deg2rad(25)]),
+        polar=np.array([0, 0, 0, 0]),
+        radius=np.array([1, 1, 1, 1]),
     )
 
     # 2 have small polar errors, 2 have large (>=90°)
-    estimations = Coordinates(
-        positions=np.array([
-            [0, np.deg2rad(30), 1],                # 30° - no confusion
-            [np.deg2rad(10), np.deg2rad(100), 1],  # 100° - confusion
-            [np.deg2rad(-15), np.deg2rad(60), 1],  # 60° - no confusion
-            [np.deg2rad(25), np.deg2rad(120), 1],  # 120° - confusion
+    estimations = pf.Coordinates.from_spherical_side(
+        lateral=np.array([
+            0, np.deg2rad(10), np.deg2rad(-15), np.deg2rad(25),
         ]),
-        convention='horizontal-polar',
+        polar=np.array([
+            np.deg2rad(30), np.deg2rad(100), np.deg2rad(60), np.deg2rad(120),
+        ]),
+        radius=np.array([1, 1, 1, 1]),
     )
 
     # Expected: 2/4 = 50% quadrant errors
@@ -488,21 +466,17 @@ def test_querrMiddlebrooks_known_output():
 def test_querrMiddlebrooks_excludes_peripheral():
     """Test querrMiddlebrooks excludes lateral responses > ±30°."""
     # Create targets with varying lateral positions
-    targets = Coordinates(
-        positions=np.array([
-            [0, 0, 1],                     # central
-            [np.deg2rad(50), 0, 1],        # peripheral (excluded)
-        ]),
-        convention='horizontal-polar',
+    targets = pf.Coordinates.from_spherical_side(
+        lateral=np.array([0, np.deg2rad(50)]),
+        polar=np.array([0, 0]),
+        radius=np.array([1, 1]),
     )
 
     # Both have large polar errors
-    estimations = Coordinates(
-        positions=np.array([
-            [0, np.deg2rad(100), 1],           # confusion, included
-            [np.deg2rad(50), np.deg2rad(100), 1],  # confusion, excluded
-        ]),
-        convention='horizontal-polar',
+    estimations = pf.Coordinates.from_spherical_side(
+        lateral=np.array([0, np.deg2rad(50)]),
+        polar=np.array([np.deg2rad(100), np.deg2rad(100)]),
+        radius=np.array([1, 1]),
     )
 
     # Only first response should count
@@ -528,20 +502,19 @@ def test_querrMiddlebrooks_excludes_peripheral():
 def test_localization_error_coordinate_conversion():
     """Test that localization_error converts coordinates correctly."""
     # Create targets in Cartesian
-    targets_cart = Coordinates(
-        positions=np.array([[1, 0, 0], [0, 1, 0]]),
-        convention='cartesian',
+    targets_cart = pf.Coordinates.from_cartesian(
+        x=np.array([1, 0]),
+        y=np.array([0, 1]),
+        z=np.array([0, 0]),
     )
 
     # Create estimations in spherical (same positions)
     # [1, 0, 0] in Cartesian = [0°, 0°, 1] in spherical
     # [0, 1, 0] in Cartesian = [90°, 0°, 1] in spherical
-    estimations_sph = Coordinates(
-        positions=np.array([
-            [0, 0, 1],
-            [np.pi/2, 0, 1],
-        ]),
-        convention='spherical',
+    estimations_sph = pf.Coordinates.from_spherical_side(
+        lateral=np.array([0, np.pi/2]),
+        polar=np.array([0, 0]),
+        radius=np.array([1, 1]),
     )
 
     # Should convert both to horizontal-polar and compute
@@ -558,14 +531,16 @@ def test_localization_error_coordinate_conversion():
 
 def test_rmsL_all_outside_range():
     """Test rmsL returns NaN when all responses outside ±60°."""
-    targets = Coordinates(
-        positions=np.array([[0, 0, 1]]),
-        convention='horizontal-polar',
+    targets = pf.Coordinates.from_spherical_side(
+        lateral=np.array([0]),
+        polar=np.array([0]),
+        radius=np.array([1]),
     )
 
-    estimations = Coordinates(
-        positions=np.array([[np.deg2rad(80), 0, 1]]),
-        convention='horizontal-polar',
+    estimations = pf.Coordinates.from_spherical_side(
+        lateral=np.array([np.deg2rad(80)]),
+        polar=np.array([0]),
+        radius=np.array([1]),
     )
 
     error = localization_error(targets, estimations, 'rmsL')
@@ -574,14 +549,16 @@ def test_rmsL_all_outside_range():
 
 def test_single_position():
     """Test metrics work with single position."""
-    targets = Coordinates(
-        positions=np.array([[0, 0, 1]]),
-        convention='horizontal-polar',
+    targets = pf.Coordinates.from_spherical_side(
+        lateral=np.array([0]),
+        polar=np.array([0]),
+        radius=np.array([1]),
     )
 
-    estimations = Coordinates(
-        positions=np.array([[np.deg2rad(10), np.deg2rad(20), 1]]),
-        convention='horizontal-polar',
+    estimations = pf.Coordinates.from_spherical_side(
+        lateral=np.array([np.deg2rad(10)]),
+        polar=np.array([np.deg2rad(20)]),
+        radius=np.array([1]),
     )
 
     # Should not raise any errors
@@ -612,26 +589,20 @@ def test_large_dataset():
     lateral = rng.uniform(-np.pi/6, np.pi/6, n_samples)  # ±30°
     polar = rng.uniform(0, np.pi, n_samples)
 
-    targets = Coordinates(
-        positions=np.column_stack([
-            lateral,
-            polar,
-            np.ones(n_samples),
-        ]),
-        convention='horizontal-polar',
+    targets = pf.Coordinates.from_spherical_side(
+        lateral=lateral,
+        polar=polar,
+        radius=np.ones(n_samples),
     )
 
     # Add small random errors
     lateral_est = lateral + rng.normal(0, 0.1, n_samples)
     polar_est = polar + rng.normal(0, 0.2, n_samples)
 
-    estimations = Coordinates(
-        positions=np.column_stack([
-            lateral_est,
-            polar_est,
-            np.ones(n_samples),
-        ]),
-        convention='horizontal-polar',
+    estimations = pf.Coordinates.from_spherical_side(
+        lateral=lateral_est,
+        polar=polar_est,
+        radius=np.ones(n_samples),
     )
 
     # Should complete without errors
@@ -646,4 +617,3 @@ def test_large_dataset():
     )
     assert isinstance(error_qerr, (float, np.floating))
     assert 0 <= error_qerr <= 100  # Should be a valid percentage
-    

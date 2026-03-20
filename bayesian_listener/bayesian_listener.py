@@ -3,11 +3,9 @@ import sofar
 import numpy as np
 import pyfar as pf
 import matplotlib.pyplot as plt
-from scipy.signal import lfilter
 from scipy.special import logsumexp
 from bayesian_listener import utils
 from bayesian_listener import resample
-from joblib import Parallel, delayed
 from pathlib import Path
 
 class BayesianListener:
@@ -150,75 +148,9 @@ class BayesianListener:
         interpolation : str, default='SH'
             Method for template interpolation.
         """
-        # normalize hrirs to frontal position
-        coords2find = pf.Coordinates.from_cartesian(1, 0, 0)
-        idx, _ = self.coords.find_nearest(coords2find)
-        hrirs_temp = self.hrir / np.max(np.abs(self.hrir[idx]))
-
-        a = 32.5e-6
-        b = 0.095
-
-        # ITD
-        itd = utils.itdestimator(hrirs_temp, fs=self.fs)
-        self.itd = np.sign(itd) * ((np.log(a + b*np.abs(itd)) - np.log(a)) / b)
-
-        # ILD
-        self.ild = np.ones_like(self.itd)
-        self.ild[:, 0] = (
-            utils.mag2db(np.sqrt(np.mean(hrirs_temp[:, 0, :]**2,axis=1))) -
-            utils.mag2db(np.sqrt(np.mean(hrirs_temp[:, 1, :]**2, axis=1)))
-            )
-
-        # compute spatial features
-        # -------- padding to account for longer filter responses --------
-        pad_len_sec = 0.05  # 50 ms (same idea as the MATLAB code)
-        time_len = hrirs_temp.shape[2]    # samples along time (last axis)
-        dir_len  = hrirs_temp.shape[0]
-        ear_len  = hrirs_temp.shape[1]
-        target_samples = int(round(pad_len_sec * self.fs))
-
-        if time_len < target_samples:
-            pad_samples = target_samples - time_len
-            pad_mat = np.zeros((dir_len, ear_len, pad_samples),
-                               dtype=hrirs_temp.dtype)
-            hrirs_temp = np.concatenate([hrirs_temp, pad_mat], axis=2)
-
-        # generate gammatone filterbank
-        self.freqs = utils.erb_space(spectral_range)
-        B, A, *_ = utils.gammatone(self.freqs, fs=self.fs)
-
-        # Preallocate output array (float, since we take 2*real(...))
-        hrirs_filt = np.zeros((len(self.freqs), *hrirs_temp.shape),
-                              dtype=float)
-
-        # Parallel gammatone filtering
-        def apply_filter(i):
-            return 2 * np.real(lfilter([B[i]], A[i], hrirs_temp, axis=-1))
-
-        # Use all available cores for parallel processing
-        results = Parallel(n_jobs=-1, backend='threading')(
-            delayed(apply_filter)(i) for i in range(len(self.freqs))
-        )
-
-        # results = [
-        #     2 * np.real(lfilter([B[i]], A[i], hrirs_temp, axis=-1))
-        #     for i in range(len(self.freqs))
-        # ]
-        #
-        for i, result in enumerate(results):
-            hrirs_filt[i] = result
-
-        # Rectify + sqrt (rectification and compression for hair cell's firing)
-        # removed because skews features and makes worse fits
-        hrirs_filt = np.sqrt(np.maximum(hrirs_filt, 0))
-
-        # average over time -> spectral amplitude
-        # (n_freqs, n_dirs, n_ears)
-        rms = np.sqrt(np.mean(hrirs_filt**2, axis=-1))
-        # -> (n_dirs, n_freqs, n_ears)
-        spectral_amps = utils.mag2db(rms).transpose(1, 0, 2)
-
-        self.spectral_cues = spectral_amps
+        self.itd, self.ild, self.spectral_cues, self.freqs = \
+            utils.compute_features(self.hrir, self.coords, self.fs,
+                                   spectral_range)
 
         # prepare templates on uniform grid
         self.template = self.interpolate(interpolation)
@@ -339,6 +271,11 @@ class BayesianListener:
             Otherwise: Estimated template indices of shape
             (targets :math:`\times` repetitions).
         """
+
+        if not hasattr(self, 'itd'):
+            raise ValueError(
+                'Features not computed. Call prepare_features() before infer().'
+            )
 
         rng = np.random.default_rng(seed)
 

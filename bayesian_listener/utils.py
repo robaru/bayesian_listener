@@ -3,6 +3,8 @@ import numpy as np
 from scipy.signal import butter, hilbert, correlate, lfilter
 from math import factorial
 from numba import jit, prange
+from joblib import Parallel, delayed
+import pyfar as pf
 import hashlib
 import pandas as pd
 from pathlib import Path
@@ -708,4 +710,89 @@ def print_memory_usage(label=""):
     mem_info = process.memory_info()
     mem_gb = mem_info.rss / 1024**3
     print(f"[{label}] Memory usage: {mem_gb:.2f} GB")
+
+
+def compute_features(hrir, coords, fs, spectral_range=[7e2, 18e3]):
+    """Compute ITD, ILD, and spectral cues from HRIRs.
+
+    Parameters
+    ----------
+    hrir : ndarray
+        Head-related impulse responses, shape (n_dirs, 2, n_samples).
+    coords : pyfar.Coordinates
+        Source positions corresponding to the HRIR directions.
+    fs : int
+        Sampling rate in Hz.
+    spectral_range : list, default=[7e2, 18e3]
+        Frequency range [low, high] in Hz for spectral analysis.
+
+    Returns
+    -------
+    itd : ndarray
+        Interaural time differences, shape (n_dirs, 1).
+    ild : ndarray
+        Interaural level differences, shape (n_dirs, 1).
+    spectral_cues : ndarray
+        Spectral amplitudes, shape (n_dirs, n_freqs, 2).
+    freqs : ndarray
+        Centre frequencies of the gammatone filterbank.
+    """
+    # normalize hrirs to frontal position
+    coords2find = pf.Coordinates.from_cartesian(1, 0, 0)
+    idx, _ = coords.find_nearest(coords2find)
+    hrirs_temp = hrir / np.max(np.abs(hrir[idx]))
+
+    a = 32.5e-6
+    b = 0.095
+
+    # ITD
+    itd_raw = itdestimator(hrirs_temp, fs=fs)
+    itd = np.sign(itd_raw) * ((np.log(a + b*np.abs(itd_raw)) - np.log(a)) / b)
+
+    # ILD
+    ild = np.ones_like(itd)
+    ild[:, 0] = (
+        mag2db(np.sqrt(np.mean(hrirs_temp[:, 0, :]**2, axis=1))) -
+        mag2db(np.sqrt(np.mean(hrirs_temp[:, 1, :]**2, axis=1)))
+    )
+
+    # padding to account for longer filter responses
+    pad_len_sec = 0.05  # 50 ms
+    time_len = hrirs_temp.shape[2]
+    dir_len = hrirs_temp.shape[0]
+    ear_len = hrirs_temp.shape[1]
+    target_samples = int(round(pad_len_sec * fs))
+
+    if time_len < target_samples:
+        pad_samples = target_samples - time_len
+        pad_mat = np.zeros((dir_len, ear_len, pad_samples),
+                           dtype=hrirs_temp.dtype)
+        hrirs_temp = np.concatenate([hrirs_temp, pad_mat], axis=2)
+
+    # generate gammatone filterbank
+    freqs = erb_space(spectral_range)
+    B, A, *_ = gammatone(freqs, fs=fs)
+
+    # Preallocate output array
+    hrirs_filt = np.zeros((len(freqs), *hrirs_temp.shape), dtype=float)
+
+    # Parallel gammatone filtering
+    def apply_filter(i):
+        return 2 * np.real(lfilter([B[i]], A[i], hrirs_temp, axis=-1))
+
+    results = Parallel(n_jobs=-1, backend='threading')(
+        delayed(apply_filter)(i) for i in range(len(freqs))
+    )
+
+    for i, result in enumerate(results):
+        hrirs_filt[i] = result
+
+    # Rectification and compression
+    hrirs_filt = np.sqrt(np.maximum(hrirs_filt, 0))
+
+    # average over time -> spectral amplitude
+    rms = np.sqrt(np.mean(hrirs_filt**2, axis=-1))
+    spectral_cues = mag2db(rms).transpose(1, 0, 2)
+
+    return itd, ild, spectral_cues, freqs
 # %%

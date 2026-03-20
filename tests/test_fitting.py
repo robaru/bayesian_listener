@@ -5,7 +5,7 @@ from unittest.mock import patch, MagicMock
 
 import pyfar as pf
 from bayesian_listener.fitting import (
-    fit_listener, loglik, sigma_to_kappa, kappa_to_sigma, allcomb,
+    fit_listener, negloglik, sigma_to_kappa, kappa_to_sigma, allcomb,
 )
 
 from tests.test_bayesian_listener import get_sofa_file
@@ -36,7 +36,7 @@ def test_allcomb():
 
 
 # ---------------------------------------------------------------------------
-# Fixture: model + synthetic data for loglik / fit_listener tests
+# Fixture: model + synthetic data for negloglik / fit_listener tests
 # ---------------------------------------------------------------------------
 
 @pytest.fixture
@@ -75,7 +75,7 @@ def fitting_data():
 
 @pytest.fixture
 def model_and_arrays(fitting_data):
-    """Prepare BayesianListener model and arrays needed by loglik."""
+    """Prepare BayesianListener model and arrays needed by negloglik."""
     from bayesian_listener import BayesianListener
 
     sofa_path, obs_tbl, targets_coords = fitting_data
@@ -104,16 +104,16 @@ def model_and_arrays(fitting_data):
 
 
 # ---------------------------------------------------------------------------
-# loglik tests
+# negloglik tests
 # ---------------------------------------------------------------------------
 
-def test_loglik_returns_finite_scalar(model_and_arrays):
-    """loglik should return a finite positive scalar for moderate kappa."""
+def test_negloglik_returns_finite_scalar(model_and_arrays):
+    """negloglik should return a finite positive scalar for moderate kappa."""
     model, targets, resp_coords, resp_targets_idx = model_and_arrays
 
     sigmas_log = np.log([2.0, 8.0, 15.0, 30.0])
-    nll = loglik(model, targets, resp_coords, resp_targets_idx, sigmas_log,
-                 num_repetitions=5)
+    nll = negloglik(model, targets, resp_coords, resp_targets_idx, sigmas_log,
+                    num_repetitions=5)
 
     assert np.isscalar(nll)
     assert np.isfinite(nll)
@@ -126,13 +126,13 @@ def test_loglik_returns_finite_scalar(model_and_arrays):
     1000.0,         # well into large-kappa regime
     sigma_to_kappa(1), # extreme precision
 ])
-def test_loglik_finite_across_kappa_range(model_and_arrays, kappa):
-    """loglik must stay finite for kappa values spanning the full bound range."""
+def test_negloglik_finite_across_kappa_range(model_and_arrays, kappa):
+    """negloglik must stay finite for kappa values spanning the full bound range."""
     model, targets, resp_coords, resp_targets_idx = model_and_arrays
 
     sigmas_log = np.log([2.0, 8.0, kappa, 30.0])
-    nll = loglik(model, targets, resp_coords, resp_targets_idx, sigmas_log,
-                 num_repetitions=5)
+    nll = negloglik(model, targets, resp_coords, resp_targets_idx, sigmas_log,
+                    num_repetitions=5)
 
     assert np.isfinite(nll), f"NaN/Inf for kappa={kappa}"
 

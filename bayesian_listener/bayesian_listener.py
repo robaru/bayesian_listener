@@ -123,9 +123,23 @@ class BayesianListener:
                          interpolation='SH',
                          interpolation_grid=None,
                          use_cache=True,
-                         force_recompute=False):
-        """Compute spatial features and templates, with optional caching."""
+                         force_recompute=False,
+                         cache_dir=None):
+        """Compute spatial features and templates, with optional caching.
+
+        Parameters
+        ----------
+        cache_dir : str or Path, optional
+            Directory for cached features. Defaults to the platform-specific
+            user cache directory (e.g. ``~/.cache/bayesian_listener`` on Linux).
+        """
         assert(self.sofa_file is not None)
+
+        if cache_dir is None:
+            cache_dir = Path.cwd() / 'data' / 'preprocessed'
+        else:
+            cache_dir = Path(cache_dir)
+        self.cache_dir = cache_dir
 
         self.interpolation_grid = interpolation_grid
 
@@ -175,9 +189,7 @@ class BayesianListener:
         None
             Modifies object in place
         """
-        # Get path to repo root (parent of model directory)
-        repo_root = Path(__file__).parent.parent
-        cache_dir = repo_root / 'data' / 'preprocessed'
+        cache_dir = self.cache_dir
 
         # Define what attributes to cache/restore
         cache_attributes = [

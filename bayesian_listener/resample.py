@@ -6,7 +6,6 @@ import numpy as np
 import spharpy as sy
 import spaudiopy
 import pyfar as pf
-from bayesian_listener.coordinates import Coordinates
 import warnings
 
 # -----------------------------------------------------------------------------
@@ -414,7 +413,7 @@ def resample(cues, coordinates, template=None, method='SH'):
         Resampled cues. Returns same type (single array or list) as input.
         Each array has shape (n_template_dirs, ...)
         matching input except first dimension.
-    template_coords : Coordinates
+    template_coords : pyfar.Coordinates
         Output coordinates
     """
     if method.lower() == 'barycentric':
@@ -496,24 +495,24 @@ def plot_resampling_grid(coords_meas_cart,
 
     # 2D projection (top view)
     ax2 = fig.add_subplot(122)
-    cm = Coordinates(positions = coords_meas_cart, convention = 'cartesian')
-    cd = Coordinates(positions = dirs_added, convention = 'cartesian')
+    cm = pf.Coordinates(coords_meas_cart[:, 0], coords_meas_cart[:, 1], coords_meas_cart[:, 2])
+    cd = pf.Coordinates(dirs_added[:, 0], dirs_added[:, 1], dirs_added[:, 2])
 
-    ax2.scatter(cm.az(),
-                cm.el(),
+    ax2.scatter(cm.spherical_elevation[:, 0],
+                cm.spherical_elevation[:, 1],
                 c='black',
                 s=20,
                 alpha=0.6,
                 label=f'Measured (n={len(coords_meas_cart)})',
                 )
-    ax2.scatter(cd.az(),
-                cd.el(),
+    ax2.scatter(cd.spherical_elevation[:, 0],
+                cd.spherical_elevation[:, 1],
                 c='red',
                 s=20, alpha=0.6,
                 label=f'Added (n={np.sum(missing_mask)})',
                 )
-    ax2.set_xlabel('Lateral (deg)')
-    ax2.set_ylabel('Polar (deg)')
+    ax2.set_xlabel('Azimuth (rad)')
+    ax2.set_ylabel('Elevation (rad)')
     ax2.set_title('Top View: Resampling Grid')
     ax2.set_aspect('equal')
     ax2.legend()

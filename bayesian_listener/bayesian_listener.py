@@ -7,7 +7,6 @@ from scipy.signal import lfilter
 from scipy.special import logsumexp
 from bayesian_listener import utils
 from bayesian_listener import resample
-from bayesian_listener.coordinates import Coordinates
 from joblib import Parallel, delayed
 from pathlib import Path
 

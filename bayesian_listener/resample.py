@@ -38,21 +38,33 @@ def find_max_order(dirs,
                    N_max=35,
                    regularised=True,
                    epsilon=1e-2):
-    """
-    Return the largest N ≤ N_max such that cond(Y(dirs,N)) < thresh.
+    """Return the largest SH order N ≤ N_max with acceptable conditioning.
+
+    Iterates from N=1 upward and returns the highest order whose
+    (optionally regularised) Gram matrix ``Y^T Y`` has a condition number
+    below *thresh*.
 
     Parameters
     ----------
-    coordinates : pyfar.Coordinates
+    dirs : pyfar.Coordinates
         The sampling grid.
+    thresh : float
+        Upper bound on κ(Y^T Y).  Default 12.25 follows Bau et al. (2022),
+        corresponding to κ(Y) < 3.5 (Ben-Hur et al., 2019).
+    N_max : int
+        Maximum SH order to consider.
+    regularised : bool
+        If True, apply Tikhonov regularisation with Bau damping matrix
+        before evaluating the condition number.
+    epsilon : float
+        Regularisation weight (Bau et al., 2022, use 10e-2 = 0.1;
+        current default is 1e-2 — see issue #37).
 
-    Threshold:
-        - Ben-Hur: κ(Y) < 3.5 → κ(Y^T Y) < 12.25
-        - Bau: κ(Y^T Y) < 12.25 → κ(Y) < 3.5
-
-    We use Bau
-
-    We also use regularisation as in Bau (epsilon = 1e-2)
+    Returns
+    -------
+    N : int
+        Largest admissible SH order (1-based). Returns 1 if no order
+        satisfies the threshold.
     """
     Y = sy.spherical.spherical_harmonic_basis_real(N_max, dirs)
 

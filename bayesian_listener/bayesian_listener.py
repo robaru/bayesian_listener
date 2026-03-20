@@ -485,7 +485,7 @@ class BayesianListener:
         return posterior if store_posterior else posterior_idx
 
 
-    def estimate(self, posterior, sigma_motor=None, seed=None):
+    def estimate(self, posterior, kappa_motor=None, seed=None):
         """
         Estimate directions from posterior distribution.
 
@@ -495,9 +495,10 @@ class BayesianListener:
             Either full posterior (trials :math:`\times` repetitions :math:`\times` templates)
             OR argmax indices (trials :math:`\times` repetitions)
             if computed with ``store_posterior=False`` (see :py:meth:`~infer` for details)
-        sigma_motor : float or None, optional
-            Motor noise standard deviation in degrees.
-            If None, uses self.parameters['sigma_motor'].
+        kappa_motor : float or None, optional
+            Motor noise concentration. The concentration parametrises a von Mises - Fisher distribution
+            and can be obtained from a standard deviation in degrees froom fitting.sigma_to_kappa()
+            If None, uses self.parameters['kappa_motor'].
             If False or 0, motor noise is disabled.
         seed : int or None, optional
             Fixed random seed for reproducibility.

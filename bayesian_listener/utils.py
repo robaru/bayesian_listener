@@ -344,17 +344,34 @@ def multiple_logpdfs_vec_input(xs, means, covs):
     out = -0.5 * (dim * log2pi + mahas + logdets[None, :])
     return out
 
-def multiple_logpdfs_vec_input_single_cov(xs, means, logdet, Us):
-    """
-    `multiple_logpdfs` assuming `xs` has shape (N samples, P features).
-    means is NxP and cov is PxP
-    https://gregorygundersen.com/blog/2020/12/12/group-multivariate-normal-pdf/
+def _multiple_logpdfs_vec_input_single_cov_numpy(xs, means, logdet, Us):
+    """Pure-numpy reference implementation of multivariate normal log-pdf.
 
-    The big idea is to do one intensive operation, eigenvalue decomposition,
-    and then use that decomposition to compute the matrix inverse
-    and determinant cheaply.
-    """
+    Equivalent to the numba-accelerated `multiple_logpdfs_vec_input_single_cov`
+    but without JIT compilation. Useful for debugging and validating the numba
+    version, since it is easier to inspect intermediate arrays.
 
+    Parameters
+    ----------
+    xs : ndarray, shape (N, P)
+        Sample points.
+    means : ndarray, shape (M, P)
+        Distribution means.
+    logdet : float
+        Log-determinant of the covariance matrix.
+    Us : ndarray, shape (P, P)
+        Whitening matrix (inverse square-root of covariance).
+
+    Returns
+    -------
+    out : ndarray, shape (N, M)
+        Log-pdf of each sample under each mean.
+
+    See Also
+    --------
+    multiple_logpdfs_vec_input_single_cov : Numba-accelerated version used in
+        production.
+    """
     devs = xs[:, None, :] - means[None, :, :]
 
     # Use `einsum` for matrix-vector multiplications

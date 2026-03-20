@@ -257,8 +257,8 @@ def estimate_motor_noise(model, obs_tbl, targets_coords, subject_id=None,
         'n_trials': int(np.sum(mask))
     }
 
-def loglik(model, targets, responses, resp_targets_idx, sigmas_log,
-           num_repetitions=200):
+def negloglik(model, targets, responses, resp_targets_idx, sigmas_log,
+              num_repetitions=200):
     """
     Negative log-likelihood function for parameter fitting.
 
@@ -664,8 +664,8 @@ def fit_listener_partial(sofa_path, obs_tbl, targets_coords,
                 elif p == 'sigma_prior':
                     tau_prior = val  # Fitted as tau_prior directly
 
-            # Build full sigmas_log array for loglik function
-            # Note: loglik expects tau_prior in position 3
+            # Build full sigmas_log array for negloglik function
+            # Note: negloglik expects tau_prior in position 3
             sigmas_log = np.array([
                 np.log(sigma_ild),
                 np.log(sigma_spectral),
@@ -673,7 +673,7 @@ def fit_listener_partial(sofa_path, obs_tbl, targets_coords,
                 np.log(tau_prior)
             ])
 
-            return loglik(model, targets, resp_coords, resp_targets_idx, sigmas_log,
+            return negloglik(model, targets, resp_coords, resp_targets_idx, sigmas_log,
                           num_repetitions=num_repetitions)
 
         # Grid search for initialization

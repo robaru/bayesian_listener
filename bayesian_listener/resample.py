@@ -193,7 +193,7 @@ def resample_two_step(cues, coordinates, template, second_step):
     if np.any(mask):
         # low order SH transform
         n_max = find_max_order(coordinates, N_max=5)
-        print(print("Low order {}".format(n_max)))
+        print("Low order {}".format(n_max))
         Y = sy.spherical.spherical_harmonic_basis_real(n_max, coordinates)
         Y_inv = np.linalg.pinv(Y)
         cues_low = [Y_inv @ c for c in cues]

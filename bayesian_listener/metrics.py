@@ -443,3 +443,26 @@ def querrMiddlebrooks(true, est):
 
     qerr = 100 * n_confusions / n_total
     return qerr, {'confusion_count': n_confusions, 'response_count': n_total}
+
+
+@register_metric(
+    name='angular_error',
+    coord_convention='cartesian',
+    input_unit='meters',
+    output_unit='radians',
+    description=(
+        "Great-circle angular error (in radians).\n\t"
+        "Computed as arccos of the dot product between target and estimation\n\t"
+        "unit vectors. Returns the mean angular error across all observations."),
+    ylabel="Angular error (rad)",
+)
+def angular_error(true, est):
+    """
+    Compute mean great-circle angular error between target and estimation
+    unit vectors.  More details in the decorator above.
+    """
+    # Dot product row-wise, clipped to [-1, 1] for numerical safety
+    dots = np.sum(true * est, axis=-1)
+    dots = np.clip(dots, -1.0, 1.0)
+    angles = np.arccos(dots)
+    return np.mean(angles)

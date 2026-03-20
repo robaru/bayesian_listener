@@ -4,7 +4,6 @@ import pyfar as pf
 from pathlib import Path
 import urllib.request
 from bayesian_listener import BayesianListener
-from bayesian_listener.coordinates import Coordinates
 from bayesian_listener.utils import save_to_cache, load_from_cache
 
 
@@ -157,42 +156,30 @@ def test_model_multiple():
     target_indices = [100, 260]
     targets = all_targets[target_indices, :]
 
-    # Get true target positions in spherical coordinates
-    true_coords = am.coords.sph()
-    true_dirs = true_coords[target_indices, :]  # (2, 2) -> azimuth, elevation
+    # Get true target positions as cartesian unit vectors
+    true_cart = am.coords.cartesian[target_indices, :]
 
     # Run inference: 2 targets x 2 repetitions
     posterior = am.infer(targets, repetitions=2, seed=42)
     estimation = am.estimate(posterior, kappa_motor=0)
+    estimation_cart = estimation.cartesian
 
     # Verify shapes: (n_targets, n_repetitions, 3)
-    assert estimation.shape == (2, 2, 3), \
-        f"Expected shape (2, 2, 3), got {estimation.shape}"
+    assert estimation_cart.shape == (2, 2, 3), \
+        f"Expected shape (2, 2, 3), got {estimation_cart.shape}"
 
     # All estimated directions should be unit vectors
-    norms = np.linalg.norm(estimation, axis=-1)
+    norms = np.linalg.norm(estimation_cart, axis=-1)
     np.testing.assert_allclose(norms, 1.0, atol=0.1,
                                err_msg="Estimations should be unit vectors")
 
-    # Convert estimations to spherical and check angular proximity to targets
-    # For each target, at least one repetition should be within 30 deg
+    # Check angular proximity to targets using great-circle distance
     tolerance_deg = 5
     for t_idx in range(2):
         for r_idx in range(2):
-            est_coord = Coordinates(
-                sofa_file=None,
-                positions=estimation[t_idx, r_idx, :].reshape(1, 3),
-                convention='cartesian',
-            )
-            est_sph = est_coord.sph()  # (1, 2) -> azimuth, elevation
-
-            az_err = abs(est_sph[0, 0] - true_dirs[t_idx, 0])
-            # Handle azimuth wraparound
-            az_err = min(az_err, 360 - az_err)
-            el_err = abs(est_sph[0, 1] - true_dirs[t_idx, 1])
-
-            angular_err = np.sqrt(az_err**2 + el_err**2)
-            if angular_err > tolerance_deg:
+            dot = np.clip(estimation_cart[t_idx, r_idx, :] @ true_cart[t_idx], -1, 1)
+            angular_err_deg = np.rad2deg(np.arccos(dot))
+            if angular_err_deg > tolerance_deg:
                 return False
 
 

@@ -121,3 +121,4 @@ data
 
 # Claude Code
 .claude
+notes/**

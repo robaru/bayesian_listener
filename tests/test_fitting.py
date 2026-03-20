@@ -3,7 +3,7 @@ import numpy as np
 import pandas as pd
 from unittest.mock import patch, MagicMock
 
-from bayesian_listener.coordinates import Coordinates
+import pyfar as pf
 from bayesian_listener.fitting import (
     fit_listener, loglik, sigma_to_kappa, kappa_to_sigma, allcomb,
 )
@@ -50,10 +50,10 @@ def fitting_data():
         [45, 0, 1],
         [0, 45, 1],
     ])
-    targets_coords = Coordinates(
-        positions=target_dirs,
-        convention='spherical',
-        units='deg',
+    targets_coords = pf.Coordinates.from_spherical_elevation(
+        np.deg2rad(target_dirs[:, 0]),
+        np.deg2rad(target_dirs[:, 1]),
+        target_dirs[:, 2],
     )
 
     # Synthetic responses — small noise around the targets
@@ -83,31 +83,24 @@ def model_and_arrays(fitting_data):
     model = BayesianListener(sofa_path)
     model.prepare_features(interpolation='SH')
 
-    target_indices = model.coords.find(targets_coords)[1]
+    target_indices = model.coords.find_nearest(targets_coords)[0][0]
     targets = model.represent()[target_indices, :]
 
     subj_data = obs_tbl[obs_tbl['participant'] == 'test_subj']
-    resp_coords = Coordinates(
-        positions=np.column_stack([
-            np.deg2rad(subj_data['azi_response'].values),
-            np.deg2rad(subj_data['ele_response'].values),
-            np.ones(len(subj_data)),
-        ]),
-        convention='spherical',
+    resp_coords = pf.Coordinates.from_spherical_elevation(
+        np.deg2rad(subj_data['azi_response'].values),
+        np.deg2rad(subj_data['ele_response'].values),
+        np.ones(len(subj_data)),
     )
-    resp_cart = resp_coords.convert('cartesian')
 
-    resp_targets = Coordinates(
-        positions=np.column_stack([
-            np.deg2rad(subj_data['azi_target'].values),
-            np.deg2rad(subj_data['ele_target'].values),
-            np.ones(len(subj_data)),
-        ]),
-        convention='spherical',
+    resp_targets = pf.Coordinates.from_spherical_elevation(
+        np.deg2rad(subj_data['azi_target'].values),
+        np.deg2rad(subj_data['ele_target'].values),
+        np.ones(len(subj_data)),
     )
-    resp_targets_idx = targets_coords.find(resp_targets)[1]
+    resp_targets_idx = targets_coords.find_nearest(resp_targets)[0][0]
 
-    return model, targets, resp_cart, resp_targets_idx
+    return model, targets, resp_coords, resp_targets_idx
 
 
 # ---------------------------------------------------------------------------
@@ -116,10 +109,10 @@ def model_and_arrays(fitting_data):
 
 def test_loglik_returns_finite_scalar(model_and_arrays):
     """loglik should return a finite positive scalar for moderate kappa."""
-    model, targets, resp_cart, resp_targets_idx = model_and_arrays
+    model, targets, resp_coords, resp_targets_idx = model_and_arrays
 
     sigmas_log = np.log([2.0, 8.0, 15.0, 30.0])
-    nll = loglik(model, targets, resp_cart, resp_targets_idx, sigmas_log,
+    nll = loglik(model, targets, resp_coords, resp_targets_idx, sigmas_log,
                  num_repetitions=5)
 
     assert np.isscalar(nll)
@@ -135,10 +128,10 @@ def test_loglik_returns_finite_scalar(model_and_arrays):
 ])
 def test_loglik_finite_across_kappa_range(model_and_arrays, kappa):
     """loglik must stay finite for kappa values spanning the full bound range."""
-    model, targets, resp_cart, resp_targets_idx = model_and_arrays
+    model, targets, resp_coords, resp_targets_idx = model_and_arrays
 
     sigmas_log = np.log([2.0, 8.0, kappa, 30.0])
-    nll = loglik(model, targets, resp_cart, resp_targets_idx, sigmas_log,
+    nll = loglik(model, targets, resp_coords, resp_targets_idx, sigmas_log,
                  num_repetitions=5)
 
     assert np.isfinite(nll), f"NaN/Inf for kappa={kappa}"

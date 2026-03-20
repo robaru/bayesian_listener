@@ -8,7 +8,7 @@ from scipy.special import i0, i1
 from scipy.optimize import minimize_scalar
 from scipy.optimize import brentq
 from bayesian_listener import BayesianListener
-from bayesian_listener.coordinates import Coordinates
+import pyfar as pf
 from bayesian_listener.metrics import METRIC_FUNCTIONS
 
 def allcomb(*arrays):
@@ -161,7 +161,7 @@ def estimate_motor_noise(model, obs_tbl, targets_coords, subject_id=None,
         Behavioral observations with columns:
         'azi_response', 'ele_response', 'azi_target', 'ele_target'.
         If subject_id is provided, must also contain 'participant'.
-    targets_coords : Coordinates
+    targets_coords : pyfar.Coordinates
         Target direction coordinates.
     subject_id : str, optional
         Subject identifier for filtering obs_tbl.
@@ -193,36 +193,29 @@ def estimate_motor_noise(model, obs_tbl, targets_coords, subject_id=None,
     # Template ITD+ILD features
     template_itd = model.template.itd.flatten()
     template_ild = model.template.ild.flatten()
-    template_hp = model.template.coords.convert('horizontal-polar')
-    template_lat = template_hp[:, 0]
+    template_lat = model.template.coords.lateral
 
     # Target ITD+ILD features
-    target_indices = model.coords.find(targets_coords)[1]
+    target_indices = model.coords.find_nearest(targets_coords)[0][0]
     target_itd = model.itd[target_indices].flatten()
     target_ild = model.ild[target_indices].flatten()
 
     # Response lateral angles
-    resp_coords = Coordinates(
-        positions=np.column_stack([
-            np.deg2rad(subj_data['azi_response'].values),
-            np.deg2rad(subj_data['ele_response'].values),
-            np.ones(len(subj_data))
-        ]),
-        convention='spherical'
+    resp_coords = pf.Coordinates.from_spherical_elevation(
+        np.deg2rad(subj_data['azi_response'].values),
+        np.deg2rad(subj_data['ele_response'].values),
+        np.ones(len(subj_data)),
     )
-    resp_lat = resp_coords.convert('horizontal-polar')[:, 0]
+    resp_lat = resp_coords.lateral
 
     # Map trials to targets
-    targ_coords = Coordinates(
-        positions=np.column_stack([
-            np.deg2rad(subj_data['azi_target'].values),
-            np.deg2rad(subj_data['ele_target'].values),
-            np.ones(len(subj_data))
-        ]),
-        convention='spherical'
+    targ_coords = pf.Coordinates.from_spherical_elevation(
+        np.deg2rad(subj_data['azi_target'].values),
+        np.deg2rad(subj_data['ele_target'].values),
+        np.ones(len(subj_data)),
     )
-    targ_lat = targ_coords.convert('horizontal-polar')[:, 0]
-    trial_target_indices = targets_coords.find(targ_coords)[1]
+    targ_lat = targ_coords.lateral
+    trial_target_indices = targets_coords.find_nearest(targ_coords)[0][0]
 
     # Monte Carlo estimates for each trial
     n_trials = len(subj_data)
@@ -264,7 +257,7 @@ def estimate_motor_noise(model, obs_tbl, targets_coords, subject_id=None,
         'n_trials': int(np.sum(mask))
     }
 
-def loglik(model, targets, responses_cart, resp_targets_idx, sigmas_log,
+def loglik(model, targets, responses, resp_targets_idx, sigmas_log,
            num_repetitions=200):
     """
     Negative log-likelihood function for parameter fitting.
@@ -275,8 +268,8 @@ def loglik(model, targets, responses_cart, resp_targets_idx, sigmas_log,
         Model instance (for running inference)
     targets : ndarray
         Target feature vectors (n_targets x n_features)
-    responses_cart : ndarray
-        Observed responses in Cartesian coordinates (n_obs x 3)
+    responses : pyfar.Coordinates
+        Observed responses as spatial coordinates.
     resp_targets_idx : ndarray
         Index mapping each response to a target direction (n_obs,)
     sigmas_log : ndarray
@@ -291,6 +284,9 @@ def loglik(model, targets, responses_cart, resp_targets_idx, sigmas_log,
     neglik : float
         Negative log-likelihood
     """
+    # Extract numpy arrays at computation boundary
+    responses_cart = responses.cartesian
+
     # Parameters
     num_exp = num_repetitions
     sigma_itd = 0.569  # Fixed ITD noise
@@ -316,7 +312,7 @@ def loglik(model, targets, responses_cart, resp_targets_idx, sigmas_log,
     posterior = model.infer(targets, repetitions=num_exp)
 
     # Get MAP estimates without motor noise
-    doa_estimations = model.estimate(posterior, kappa_motor=False)  # (n_targets x num_exp x 3)
+    doa_estimations = model.estimate(posterior, kappa_motor=False).cartesian  # (n_targets x num_exp x 3)
 
     # von Mises-Fisher log-normalization constant (avoids sinh overflow)
     # log C = log(kappa / (4π sinh(kappa))) = log(kappa) - log(4π) - log(sinh(kappa))
@@ -406,7 +402,7 @@ def fit_listener(sofa_path, obs_tbl, targets_coords,
         Behavioral observations. Must contain columns:
         'azi_response', 'ele_response', 'azi_target', 'ele_target'.
         If subject_id is provided, must also contain 'participant'.
-    targets_coords : Coordinates
+    targets_coords : pyfar.Coordinates
         Target direction coordinates.
     interpolation_method : str
         HRTF interpolation method (e.g. 'SH', 'SHMAX', 'barycentric',
@@ -548,7 +544,7 @@ def fit_listener_partial(sofa_path, obs_tbl, targets_coords,
         Behavioral observations. Must contain columns:
         'azi_response', 'ele_response', 'azi_target', 'ele_target'.
         If subject_id is provided, must also contain 'participant'.
-    targets_coords : Coordinates
+    targets_coords : pyfar.Coordinates
         Target direction coordinates.
     interpolation_method : str
         HRTF interpolation method (e.g. 'SH', 'SHMAX', 'barycentric',
@@ -612,29 +608,22 @@ def fit_listener_partial(sofa_path, obs_tbl, targets_coords,
         model.prepare_features(interpolation=interpolation_method)
 
         # Extract features
-        target_indices = model.coords.find(targets_coords)[1]
+        target_indices = model.coords.find_nearest(targets_coords)[0][0]
         targets = model.represent()[target_indices, :]
 
-        # Convert responses to Cartesian
-        resp_coords = Coordinates(
-            positions=np.column_stack([
-                np.deg2rad(subj_data['azi_response'].values),
-                np.deg2rad(subj_data['ele_response'].values),
-                np.ones(len(subj_data))
-            ]),
-            convention='spherical'
+        # Build response coordinates
+        resp_coords = pf.Coordinates.from_spherical_elevation(
+            np.deg2rad(subj_data['azi_response'].values),
+            np.deg2rad(subj_data['ele_response'].values),
+            np.ones(len(subj_data)),
         )
-        resp_cart = resp_coords.convert('cartesian')
 
-        resp_targets = Coordinates(
-            positions=np.column_stack([
-                np.deg2rad(subj_data['azi_target'].values),
-                np.deg2rad(subj_data['ele_target'].values),
-                np.ones(len(subj_data))
-            ]),
-            convention='spherical'
+        resp_targets = pf.Coordinates.from_spherical_elevation(
+            np.deg2rad(subj_data['azi_target'].values),
+            np.deg2rad(subj_data['ele_target'].values),
+            np.ones(len(subj_data)),
         )
-        resp_targets_idx = targets_coords.find(resp_targets)[1]
+        resp_targets_idx = targets_coords.find_nearest(resp_targets)[0][0]
 
         # Build bounds arrays for only the parameters being fit
         lb_list, plb_list, pub_list, ub_list = [], [], [], []
@@ -684,7 +673,7 @@ def fit_listener_partial(sofa_path, obs_tbl, targets_coords,
                 np.log(tau_prior)
             ])
 
-            return loglik(model, targets, resp_cart, resp_targets_idx, sigmas_log,
+            return loglik(model, targets, resp_coords, resp_targets_idx, sigmas_log,
                           num_repetitions=num_repetitions)
 
         # Grid search for initialization

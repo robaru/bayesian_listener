@@ -4,9 +4,13 @@ of target and response directions.
 """
 import numpy as np
 import pyfar as pf
+import inspect
+import warnings
+import functools
 
 
-def localization_error(targets, estimations, metric, auxiliary_output=False):
+def localization_error(targets, estimations, metric,
+                       auxiliary_output=False, **kwargs):
     """
     Compute the localization error between two sets of coordinates
     using the specified metric.
@@ -23,9 +27,11 @@ def localization_error(targets, estimations, metric, auxiliary_output=False):
             You can view available metrics using describe_metrics()
             and get specific details with describe_metrics(name).
         -   If a callable, it must be a function that takes
-            two pyfar.Coordinates arguments (targets, estimations).
+            two pyfar.Coordinates arguments (targets, estimations)
+            as the first two positional arguments, followed by any
+            additional keyword arguments passed via **kwargs.
             In this case, the user is responsible that the correct
-            coordinate system and units are used.
+            coordinate system, units, and extra arguments are used.
             The callable should return either a single float (error value)
             or a tuple (error_value, auxiliary_data).
     auxiliary_output : bool, optional
@@ -34,6 +40,15 @@ def localization_error(targets, estimations, metric, auxiliary_output=False):
         If True, also returns the auxiliary output (dict)
         from the metric function, if available.
         Default is False.
+    **kwargs : dict, optional
+        Additional keyword arguments passed to the metric function.
+        -   If `metric` is a registered string, kwargs are validated
+            against the function signature. Unknown kwargs produce a
+            UserWarning and are ignored; valid ones are forwarded.
+            You can check the expected extra kwargs for a registered metric
+            using describe_metrics(name).
+        -   If `metric` is a callable, kwargs are forwarded as-is
+            with no validation. The user is responsible for correctness.
 
     Returns
     -------
@@ -46,19 +61,29 @@ def localization_error(targets, estimations, metric, auxiliary_output=False):
 
     Examples
     --------
-    Auxiliary output example:
+    Registered metric with extra kwarg:
 
-    A metric function like `querrMiddlebrooks` can return
-    both the main error value and a dictionary with extra details.
+    >>> error = localization_error(targets, estimations,
+    ...                            'accL_cutoff',
+    ...                            cutoff=np.deg2rad(30))
 
-    >>> error, aux = localization_error(true,
-                                        est,
-                                        'querrMiddlebrooks',
-                                        auxiliary_output=True)
+    Registered metric with auxiliary output:
+
+    >>> error, aux = localization_error(targets, estimations,
+    ...                                 'querrMiddlebrooks',
+    ...                                 auxiliary_output=True)
     >>> print(error)
     9.375
     >>> print(aux)
     {'confusion_count': 48, 'response_count': 512}
+
+    Custom callable with extra kwarg:
+
+    >>> def my_metric(targets, estimations, threshold=0.5):
+    ...     ...
+    >>> error = localization_error(targets, estimations,
+    ...                            my_metric,
+    ...                            threshold=0.1)
     """
     # Accept only Coordinates instances
     if not isinstance(targets, pf.Coordinates) or \
@@ -73,7 +98,7 @@ def localization_error(targets, estimations, metric, auxiliary_output=False):
 
     # Case 1: metric is a custom function
     if callable(metric):
-        return metric(targets, estimations)
+        return metric(targets, estimations, **kwargs)
 
     # Case 2: metric is a string, but not registered in METRIC_FUNCTIONS
     if metric not in METRIC_FUNCTIONS:
@@ -82,6 +107,21 @@ def localization_error(targets, estimations, metric, auxiliary_output=False):
             f"{list(METRIC_FUNCTIONS.keys())}")
 
     # Case 3: metric is a string and registered in METRIC_FUNCTIONS
+    if kwargs: # Validate extra kwargs against the function's signature
+        sig = inspect.signature(METRIC_FUNCTIONS[metric])
+        # Skip the first two positional params (true, est)
+        extra_params = set(list(sig.parameters.keys())[2:])
+        invalid = set(kwargs.keys()) - extra_params
+        if invalid:
+            warnings.warn(
+                f"localization_error: unknown kwargs {invalid} "
+                f"for metric '{metric}' will be ignored. "
+                f"Valid extra parameters are: {extra_params or 'none'}.",
+                UserWarning,
+                stacklevel=2,
+            )
+            kwargs = {k: v for k, v in kwargs.items() if k in extra_params}
+
     expected_coord_convention = \
         get_metric_metadata(metric)['coord_convention']
     expected_unit = get_metric_metadata(metric)['input_unit']
@@ -112,7 +152,7 @@ def localization_error(targets, estimations, metric, auxiliary_output=False):
         converted_est[:, :2] = np.rad2deg(converted_est[:, :2])
 
     value, aux_out = \
-        METRIC_FUNCTIONS[metric](converted_tar, converted_est)
+        METRIC_FUNCTIONS[metric](converted_tar, converted_est, **kwargs)
 
     return (value, aux_out) if auxiliary_output else value
 
@@ -128,6 +168,7 @@ def register_metric(name,
                     input_unit,
                     output_unit=None,
                     description=None,
+                    kwargs_description=None,
                     **extra_metadata,
                     ):
     """
@@ -145,6 +186,9 @@ def register_metric(name,
         Unit of the output data (e.g., 'radians', 'percentage').
     description : str, optional
         Description of the metric.
+    kwargs_description : dict, optional
+        Dictionary describing extra keyword arguments expected by
+        the metric function. Keys are argument names, values are descriptions.
     **extra_metadata : dict
         Additional metadata to store.
 
@@ -157,6 +201,7 @@ def register_metric(name,
         """
         Decorator that registers the metric function with metadata.
         """
+        @functools.wraps(func)
         def wrapped(*args, **kwargs):
             """
             Wrapper to ensure uniform output format.
@@ -175,6 +220,7 @@ def register_metric(name,
             'input_unit': input_unit,
             'output_unit': output_unit,
             'description': description,
+            'kwargs_description': kwargs_description,
             **extra_metadata,
         }
         METRIC_FUNCTIONS[name] = wrapped
@@ -216,7 +262,17 @@ def describe_metrics(name=None):
         info = get_metric_metadata(name)
         print(f"Metric: {name}")
         for key, value in info.items():
-            print(f"  {key}: {value}")
+            if key.startswith('_'): # Skip eventual private attributes
+                continue
+            if key == 'kwargs_description':
+                if value:
+                    print("  extra kwargs:")
+                    for kwarg_name, kwarg_desc in value.items():
+                        print(f"\t{kwarg_name}: {kwarg_desc}")
+                else:
+                    print("  extra kwargs: none")
+            else:
+                print(f"  {key}: {value}")
     else:
         print("Available metrics:")
         for name in METRIC_FUNCTIONS.keys():
@@ -314,6 +370,12 @@ def rmsL(true, est):
         "target lateral angles within ±cutoff° lateral.\n\t"
         "Cutoff defaults to 180° (π radians)."
     ),
+    kwargs_description={
+        'cutoff': (
+            "Lateral angle threshold in radians (default: π = 180°).\n\t\t"
+            "Only target positions with |lateral| ≤ cutoff are included."
+        ),
+    },
     ylabel="Lateral bias (rad)",
 )
 def accL_cutoff(true, est, cutoff=np.pi):
@@ -343,6 +405,12 @@ def accL_cutoff(true, est, cutoff=np.pi):
         "Positive values indicate upward bias,\n\t"
         "negative values indicate downward bias."
     ),
+    kwargs_description={
+        'cutoff': (
+            "Lateral angle threshold in radians (default: π/6 = 30°).\n\t\t"
+            "Only estimations with |lateral| ≤ cutoff are included."
+        ),
+    },
     ylabel="Elevation bias (rad)",
 )
 def accP_cutoff(true, est, cutoff=np.deg2rad(30)):

@@ -310,8 +310,9 @@ def rmsL(true, est):
     output_unit="radians",
     description=(
         "Lateral bias (mean signed error) within ±cutoff° lateral.\n\t"
-        "Mean of the signed difference between response and target lateral angles\n\t"
-        "within ±cutoff° lateral. Cutoff defaults to 180° (π radians)."
+        "Mean of the signed difference between response and\n\t"
+        "target lateral angles within ±cutoff° lateral.\n\t"
+        "Cutoff defaults to 180° (π radians)."
     ),
     ylabel="Lateral bias (rad)",
 )
@@ -336,9 +337,11 @@ def accL_cutoff(true, est, cutoff=np.pi):
     output_unit="radians",
     description=(
         "Elevation bias (mean signed error) within ±cutoff° lateral.\n\t"
-        "Mean of the signed difference between response and target polar angles\n\t"
-        "within ±cutoff° lateral. Cutoff defaults to 30° (π/6 radians).\n\t"
-        "Positive values indicate upward bias, negative values indicate downward bias."
+        "Mean of the signed difference between response and\n\t"
+        "target polar angles within ±cutoff° lateral.\n\t"
+        "Cutoff defaults to 30° (π/6 radians).\n\t"
+        "Positive values indicate upward bias,\n\t"
+        "negative values indicate downward bias."
     ),
     ylabel="Elevation bias (rad)",
 )
@@ -452,8 +455,9 @@ def querrMiddlebrooks(true, est):
     output_unit='radians',
     description=(
         "Great-circle angular error (in radians).\n\t"
-        "Computed as arccos of the dot product between target and estimation\n\t"
-        "unit vectors. Returns the mean angular error across all observations."),
+        "Computed as arccos of the dot product between target\n\t"
+        "and estimation unit vectors.\n\t"
+        "Returns the mean angular error across all observations."),
     ylabel="Angular error (rad)",
 )
 def angular_error(true, est):

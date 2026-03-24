@@ -8,6 +8,7 @@ localization_error function, and utility functions.
 import pytest
 import numpy as np
 import pyfar as pf
+import warnings
 from bayesian_listener.metrics import (
     localization_error,
     describe_metrics,
@@ -91,9 +92,13 @@ def test_describe_metrics(capsys):
     describe_metrics()
     captured = capsys.readouterr()
     assert 'Available metrics:' in captured.out
+    assert 'sdL' in captured.out
     assert 'rmsL' in captured.out
+    assert 'accL_cutoff' in captured.out
+    assert 'accP_cutoff' in captured.out
     assert 'rmsPmedianlocal' in captured.out
     assert 'querrMiddlebrooks' in captured.out
+    assert 'angular_error' in captured.out
 
     # Test describing specific metric
     describe_metrics('rmsL')
@@ -104,10 +109,15 @@ def test_describe_metrics(capsys):
 
 def test_all_metrics_registered():
     """Test that all expected metrics are registered."""
-    expected_metrics = ['rmsL',
-                        'rmsPmedianlocal',
-                        'querrMiddlebrooks',
-                        ]
+    expected_metrics = [
+        'sdL',
+        'rmsL',
+        'accL_cutoff',
+        'accP_cutoff',
+        'rmsPmedianlocal',
+        'querrMiddlebrooks',
+        'angular_error',
+    ]
     for metric_name in expected_metrics:
         assert metric_name in METRIC_FUNCTIONS, \
             f"Metric {metric_name} not registered"
@@ -213,6 +223,94 @@ def test_localization_error_with_callable():
     assert isinstance(result[1], dict)
 
 
+def test_localization_error_callable_with_kwargs():
+    """Test localization_error passes kwargs to callable metric."""
+    targets = pf.Coordinates.from_cartesian(
+        x=np.array([1, 0]),
+        y=np.array([0, 1]),
+        z=np.array([0, 0]),
+    )
+    estimations = pf.Coordinates.from_cartesian(
+        x=np.array([0.9, 0.1]),
+        y=np.array([0.1, 0.9]),
+        z=np.array([0.0, 0.0]),
+    )
+
+    def metric_with_scale(t, e, scale=1.0):
+        """Dummy metric that scales the result by a factor."""
+        distances = np.linalg.norm(t.cartesian - e.cartesian, axis=-1)
+        return np.mean(distances) * scale
+
+    result_default = localization_error(targets, estimations,
+                                        metric_with_scale)
+    result_scaled = localization_error(targets, estimations,
+                                       metric_with_scale, scale=10.0)
+
+    assert np.isclose(result_scaled, result_default * 10.0, rtol=1e-6)
+
+
+def test_localization_error_callable_kwargs_with_aux():
+    """Test callable with kwargs that returns auxiliary output."""
+    targets = pf.Coordinates.from_cartesian(
+        x=np.array([1, 0, -1]),
+        y=np.array([0, 1,  0]),
+        z=np.array([0, 0,  0]),
+    )
+    estimations = pf.Coordinates.from_cartesian(
+        x=np.array([0.9, 0.1, -0.8]),
+        y=np.array([0.1, 0.9,  0.2]),
+        z=np.array([0.0, 0.0,  0.0]),
+    )
+
+    def metric_with_threshold(t, e, threshold=0.5):
+        """Return mean distance and count of pairs above threshold."""
+        distances = np.linalg.norm(
+            t.cartesian - e.cartesian, axis=-1)
+        mean_dist = np.mean(distances)
+        above = int(np.sum(distances > threshold))
+        return mean_dist, {'above_threshold': above}
+
+    result = localization_error(targets, estimations,
+                                metric_with_threshold, threshold=0.1)
+
+    # With threshold=0.1, result is a tuple (value, aux)
+    assert isinstance(result, tuple)
+    assert len(result) == 2
+    assert isinstance(result[0], (float, np.floating))
+    assert isinstance(result[1], dict)
+    assert 'above_threshold' in result[1]
+
+
+def test_localization_error_callable_no_validation_of_kwargs():
+    """
+    Test that no warning is emitted for callable metrics when passing kwargs,
+    even if a kwarg name would be invalid for registered metrics.
+    """
+    targets = pf.Coordinates.from_cartesian(
+        x=np.array([1]),
+        y=np.array([0]),
+        z=np.array([0]),
+    )
+    estimations = pf.Coordinates.from_cartesian(
+        x=np.array([0]),
+        y=np.array([1]),
+        z=np.array([0]),
+    )
+
+    def dummy_metric(t, e, totally_custom_param=42):
+        _, _ = t, e  # unused
+        return float(totally_custom_param)
+
+    # No warning even for 'totally_custom_param'
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        result = localization_error(targets, estimations,
+                                    dummy_metric,
+                                    totally_custom_param=99)
+
+    assert np.isclose(result, 99.0, atol=1e-10)
+
+
 def test_localization_error_auxiliary_output():
     """Test auxiliary_output parameter returns extra information."""
     # Create test data in horizontal-polar
@@ -249,6 +347,101 @@ def test_localization_error_auxiliary_output():
     assert 'response_count' in aux
     assert aux['confusion_count'] == 1
     assert aux['response_count'] == 2
+
+
+def test_localization_error_invalid_kwarg_warns():
+    """
+    Test that passing a single invalid kwarg to a registered metric
+    produces a UserWarning and the metric runs with its default values.
+    """
+    targets = pf.Coordinates.from_spherical_side(
+        lateral=np.zeros(4),
+        polar=np.zeros(4),
+        radius=np.ones(4),
+    )
+    estimations = pf.Coordinates.from_spherical_side(
+        lateral=np.deg2rad(np.array([10, -10, 20, -20])),
+        polar=np.zeros(4),
+        radius=np.ones(4),
+    )
+
+    # 'invalid_param' is not a valid kwarg for accL_cutoff
+    with pytest.warns(UserWarning, match="invalid_param"):
+        result = localization_error(
+            targets, estimations, 'accL_cutoff',
+            invalid_param=99,
+        )
+
+    # The invalid kwarg must have been ignored: result should match
+    # a call with no kwargs at all, i.e. using the default cutoff=π
+    expected = localization_error(targets, estimations, 'accL_cutoff')
+    assert np.isclose(result, expected, rtol=1e-10)
+
+
+def test_localization_error_valid_kwarg_no_warning():
+    """Test that valid kwargs with a registered metric produces no warning."""
+    targets = pf.Coordinates.from_spherical_side(
+        lateral=np.zeros(4),
+        polar=np.zeros(4),
+        radius=np.ones(4),
+    )
+    estimations = pf.Coordinates.from_spherical_side(
+        lateral=np.deg2rad(np.array([10, -10, 20, -20])),
+        polar=np.zeros(4),
+        radius=np.ones(4),
+    )
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        result = localization_error(
+            targets, estimations, 'accL_cutoff',
+            cutoff=np.deg2rad(45),
+        )
+
+    assert isinstance(result, (float, np.floating))
+
+
+def test_localization_error_mixed_kwargs_warns_and_filters():
+    """
+    Test that mixed kwargs produce a warning only for invalid ones,
+    and that valid kwargs are still forwarded correctly.
+    """
+    # Two targets at lateral=0°, two at lateral=50°
+    targets = pf.Coordinates.from_spherical_side(
+        lateral=np.deg2rad(np.array([0, 0, 50, 50])),
+        polar=np.zeros(4),
+        radius=np.ones(4),
+    )
+    # Central targets shifted by +10°, peripheral targets shifted by +40°
+    # so that the mean bias depends on which group is included
+    estimations = pf.Coordinates.from_spherical_side(
+        lateral=np.deg2rad(np.array([10, 10, 90, 90])),
+        polar=np.zeros(4),
+        radius=np.ones(4),
+    )
+
+    # cutoff=30°: only central targets (lat=0°) pass → bias = 10°
+    # Default cutoff=π: all targets pass → bias = mean(10°,10°,40°,40°) = 25°
+    # These must differ, so cutoff has a measurable effect
+
+    # 'cutoff' is valid for accL_cutoff, 'bogus_param' is not
+    with pytest.warns(UserWarning, match="bogus_param"):
+        result = localization_error(
+            targets, estimations, 'accL_cutoff',
+            cutoff=np.deg2rad(30),
+            bogus_param=99,
+        )
+
+    expected_with_cutoff = localization_error(
+        targets, estimations, 'accL_cutoff',
+        cutoff=np.deg2rad(30),
+    )
+    expected_default = localization_error(targets, estimations, 'accL_cutoff')
+
+    # cutoff was correctly forwarded: result matches the explicit cutoff call
+    assert np.isclose(result, expected_with_cutoff, rtol=1e-10)
+    # and differs from the default, proving the kwarg had actual effect
+    assert not np.isclose(result, expected_default, rtol=1e-10)
 
 
 # =============================================================================
@@ -493,6 +686,439 @@ def test_querrMiddlebrooks_excludes_peripheral():
     assert np.isclose(error, expected_error, rtol=1e-3)
     assert aux['confusion_count'] == 1
     assert aux['response_count'] == 1
+
+
+def test_sdL_perfect_estimation():
+    """Test sdL returns zero for perfect lateral estimation."""
+    lateral = np.array([0, np.deg2rad(30), np.deg2rad(-30)])
+    polar = np.array([0, 0, 0])
+    radius = np.array([1, 1, 1])
+
+    targets = pf.Coordinates.from_spherical_side(
+        lateral=lateral,
+        polar=polar,
+        radius=radius,
+    )
+    estimations = pf.Coordinates.from_spherical_side(
+        lateral=lateral,
+        polar=polar,
+        radius=radius,
+    )
+
+    error = localization_error(targets, estimations, 'sdL')
+    assert np.isclose(error, 0, atol=1e-10)
+
+
+def test_sdL_known_output():
+    """Test sdL with synthetic data producing a known output.
+
+    sdL uses np.var (population std dev), not np.mean(diff**2),
+    so it measures spread around the mean error, not around zero.
+    """
+    # Targets all at center
+    n_samples = 4
+    targets = pf.Coordinates.from_spherical_side(
+        lateral=np.zeros(n_samples),
+        polar=np.zeros(n_samples),
+        radius=np.ones(n_samples),
+    )
+
+    # Estimations with lateral errors: [10°, -10°, 20°, -20°]
+    # Mean error = 0, so var = mean(diff²) = rmsL² in this case
+    lateral_errors_rad = np.deg2rad(np.array([10, -10, 20, -20]))
+    estimations = pf.Coordinates.from_spherical_side(
+        lateral=lateral_errors_rad,
+        polar=np.zeros(n_samples),
+        radius=np.ones(n_samples),
+    )
+
+    # sdL = sqrt(var(diff)) = population std dev of the errors
+    expected_sdL = np.sqrt(np.var(lateral_errors_rad))
+
+    error = localization_error(targets, estimations, 'sdL')
+    assert np.isclose(error, expected_sdL, rtol=1e-3)
+
+
+def test_sdL_outside_80deg_excluded():
+    """Test sdL excludes responses outside ±80° lateral."""
+    targets = pf.Coordinates.from_spherical_side(
+        lateral=np.array([0, 0]),
+        polar=np.array([0, 0]),
+        radius=np.array([1, 1]),
+    )
+
+    # One estimation within ±80°, one outside (at ~85°)
+    estimations = pf.Coordinates.from_spherical_side(
+        lateral=np.array([np.deg2rad(30), np.deg2rad(85)]),
+        polar=np.array([0, 0]),
+        radius=np.array([1, 1]),
+    )
+
+    # Only the first diff contributes: var([30°]) = 0 (single element)
+    error = localization_error(targets, estimations, 'sdL')
+    assert np.isclose(error, 0.0, atol=1e-10)
+
+
+def test_sdL_all_outside_range():
+    """Test sdL returns NaN when all responses are outside ±80° lateral."""
+    targets = pf.Coordinates.from_spherical_side(
+        lateral=np.array([0]),
+        polar=np.array([0]),
+        radius=np.array([1]),
+    )
+    estimations = pf.Coordinates.from_spherical_side(
+        lateral=np.array([np.deg2rad(85)]),
+        polar=np.array([0]),
+        radius=np.array([1]),
+    )
+
+    error = localization_error(targets, estimations, 'sdL')
+    assert np.isnan(error)
+
+
+def test_sdL_vs_rmsL_differ_with_bias():
+    """Test that sdL and rmsL differ when there is a systematic lateral bias.
+
+    rmsL measures RMS around zero, sdL measures spread (std dev around mean).
+    With a constant bias, rmsL > 0 while sdL = 0.
+    """
+    n_samples = 4
+    targets = pf.Coordinates.from_spherical_side(
+        lateral=np.zeros(n_samples),
+        polar=np.zeros(n_samples),
+        radius=np.ones(n_samples),
+    )
+
+    # Constant lateral offset of 10° → zero spread, non-zero RMS
+    constant_bias = np.deg2rad(10)
+    estimations = pf.Coordinates.from_spherical_side(
+        lateral=np.full(n_samples, constant_bias),
+        polar=np.zeros(n_samples),
+        radius=np.ones(n_samples),
+    )
+
+    error_sdL = localization_error(targets, estimations, 'sdL')
+    error_rmsL = localization_error(targets, estimations, 'rmsL')
+
+    assert np.isclose(error_sdL, 0.0, atol=1e-10)
+    assert error_rmsL > 1e-6
+
+
+def test_accL_cutoff_zero_bias():
+    """Test accL_cutoff returns zero for symmetric errors (no bias)."""
+    targets = pf.Coordinates.from_spherical_side(
+        lateral=np.zeros(4),
+        polar=np.zeros(4),
+        radius=np.ones(4),
+    )
+    # Symmetric errors cancel out
+    estimations = pf.Coordinates.from_spherical_side(
+        lateral=np.deg2rad(np.array([10, -10, 20, -20])),
+        polar=np.zeros(4),
+        radius=np.ones(4),
+    )
+
+    error = localization_error(targets, estimations, 'accL_cutoff')
+    assert np.isclose(error, 0.0, atol=1e-10)
+
+
+def test_accL_cutoff_positive_bias():
+    """Test accL_cutoff returns positive value for rightward bias."""
+    targets = pf.Coordinates.from_spherical_side(
+        lateral=np.zeros(4),
+        polar=np.zeros(4),
+        radius=np.ones(4),
+    )
+    # Constant rightward shift
+    bias_rad = np.deg2rad(15)
+    estimations = pf.Coordinates.from_spherical_side(
+        lateral=np.full(4, bias_rad),
+        polar=np.zeros(4),
+        radius=np.ones(4),
+    )
+
+    error = localization_error(targets, estimations, 'accL_cutoff')
+    assert np.isclose(error, bias_rad, rtol=1e-3)
+
+
+def test_accL_cutoff_known_output():
+    """Test accL_cutoff with known mean signed error."""
+    targets = pf.Coordinates.from_spherical_side(
+        lateral=np.zeros(4),
+        polar=np.zeros(4),
+        radius=np.ones(4),
+    )
+    # Errors: [10°, 20°, -5°, 15°] → mean = 10°
+    errors_deg = np.array([10, 20, -5, 15])
+    errors_rad = np.deg2rad(errors_deg)
+    estimations = pf.Coordinates.from_spherical_side(
+        lateral=errors_rad,
+        polar=np.zeros(4),
+        radius=np.ones(4),
+    )
+
+    expected_bias = np.mean(errors_rad)
+    error = localization_error(targets, estimations, 'accL_cutoff')
+    assert np.isclose(error, expected_bias, rtol=1e-3)
+
+
+def test_accL_cutoff_respects_cutoff():
+    """
+    Test accL_cutoff filtra i target in base al cutoff passato come kwarg.
+    """
+    targets = pf.Coordinates.from_spherical_side(
+        lateral=np.array([0, np.deg2rad(60)]),
+        polar=np.zeros(2),
+        radius=np.ones(2),
+    )
+    # Entrambe le estimations spostate di +20° dal rispettivo target
+    estimations = pf.Coordinates.from_spherical_side(
+        lateral=np.array([np.deg2rad(20), np.deg2rad(80)]),
+        polar=np.zeros(2),
+        radius=np.ones(2),
+    )
+
+    # Con cutoff=30°, solo il primo target (lat=0°) passa
+    # → unico diff = 20°, bias atteso = 20°
+    result = localization_error(
+        targets, estimations, 'accL_cutoff',
+        cutoff=np.deg2rad(30),
+    )
+    assert np.isclose(result, np.deg2rad(20), rtol=1e-3)
+
+
+def test_accL_cutoff_all_outside_cutoff():
+    """Test accL_cutoff returns NaN when all targets are outside cutoff."""
+    targets = pf.Coordinates.from_spherical_side(
+        lateral=np.array([np.deg2rad(60)]),
+        polar=np.zeros(1),
+        radius=np.ones(1),
+    )
+    estimations = pf.Coordinates.from_spherical_side(
+        lateral=np.array([np.deg2rad(70)]),
+        polar=np.zeros(1),
+        radius=np.ones(1),
+    )
+
+    result = localization_error(
+        targets, estimations, 'accL_cutoff',
+        cutoff=np.deg2rad(30),
+    )
+    assert np.isnan(result)
+
+
+def test_accP_cutoff_zero_bias():
+    """Test accP_cutoff returns zero when polar estimations match targets."""
+    lateral = np.array([0, np.deg2rad(15), np.deg2rad(-20)])
+    polar = np.array([0, np.deg2rad(45), np.deg2rad(90)])
+
+    targets = pf.Coordinates.from_spherical_side(
+        lateral=lateral, polar=polar, radius=np.ones(3),
+    )
+    estimations = pf.Coordinates.from_spherical_side(
+        lateral=lateral, polar=polar, radius=np.ones(3),
+    )
+
+    error = localization_error(targets, estimations, 'accP_cutoff')
+    assert np.isclose(error, 0.0, atol=1e-10)
+
+
+def test_accP_cutoff_positive_bias():
+    """Test accP_cutoff returns positive value for upward polar bias."""
+    targets = pf.Coordinates.from_spherical_side(
+        lateral=np.zeros(3),
+        polar=np.zeros(3),
+        radius=np.ones(3),
+    )
+    # Estimations shifted upward by 20° in polar
+    polar_bias = np.deg2rad(20)
+    estimations = pf.Coordinates.from_spherical_side(
+        lateral=np.zeros(3),
+        polar=np.full(3, polar_bias),
+        radius=np.ones(3),
+    )
+
+    error = localization_error(targets, estimations, 'accP_cutoff')
+    assert np.isclose(error, polar_bias, rtol=1e-3)
+
+
+def test_accP_cutoff_known_output():
+    """Test accP_cutoff with known mean signed polar error."""
+    targets = pf.Coordinates.from_spherical_side(
+        lateral=np.zeros(4),
+        polar=np.zeros(4),
+        radius=np.ones(4),
+    )
+    # Polar errors: [15°, -10°, 30°, -5°] → mean = 7.5°
+    errors_deg = np.array([15, -10, 30, -5])
+    errors_rad = np.deg2rad(errors_deg)
+    estimations = pf.Coordinates.from_spherical_side(
+        lateral=np.zeros(4),
+        polar=errors_rad,
+        radius=np.ones(4),
+    )
+
+    expected_bias = np.mean(errors_rad)
+    error = localization_error(targets, estimations, 'accP_cutoff')
+    assert np.isclose(error, expected_bias, rtol=1e-3)
+
+
+def test_accP_cutoff_filters_on_estimation_lateral():
+    """Test accP_cutoff filters based on estimation lateral (not target)."""
+    # Estimations: one central (0°), one peripheral (50°)
+    # Only the central estimation should contribute
+    targets = pf.Coordinates.from_spherical_side(
+        lateral=np.array([0, 0]),
+        polar=np.zeros(2),
+        radius=np.ones(2),
+    )
+    polar_bias = np.deg2rad(20)
+    estimations = pf.Coordinates.from_spherical_side(
+        lateral=np.array([0, np.deg2rad(50)]),   # second is peripheral
+        polar=np.array([polar_bias, polar_bias]),
+        radius=np.ones(2),
+    )
+
+    # Default cutoff=30°: only first estimation (lat=0°) passes
+    error = localization_error(targets, estimations, 'accP_cutoff')
+    assert np.isclose(error, polar_bias, rtol=1e-3)
+
+
+def test_accP_cutoff_all_outside_cutoff():
+    """Test accP_cutoff returns NaN when all estimations are outside cutoff."""
+    targets = pf.Coordinates.from_spherical_side(
+        lateral=np.array([0]),
+        polar=np.zeros(1),
+        radius=np.ones(1),
+    )
+    # Estimation lateral beyond default 30° cutoff
+    estimations = pf.Coordinates.from_spherical_side(
+        lateral=np.array([np.deg2rad(45)]),
+        polar=np.array([np.deg2rad(10)]),
+        radius=np.ones(1),
+    )
+
+    error = localization_error(targets, estimations, 'accP_cutoff')
+    assert np.isnan(error)
+
+def test_accP_cutoff_custom_cutoff():
+    """Test accP_cutoff con cutoff stretto passato come kwarg."""
+    targets = pf.Coordinates.from_spherical_side(
+        lateral=np.array([0, np.deg2rad(40)]),
+        polar=np.zeros(2),
+        radius=np.ones(2),
+    )
+    polar_bias = np.deg2rad(20)
+    estimations = pf.Coordinates.from_spherical_side(
+        lateral=np.array([0, np.deg2rad(40)]),
+        polar=np.array([polar_bias, polar_bias]),
+        radius=np.ones(2),
+    )
+
+    # Con cutoff=20°, solo la prima estimation (lat=0°) passa
+    result = localization_error(
+        targets, estimations, 'accP_cutoff',
+        cutoff=np.deg2rad(20),
+    )
+    assert np.isclose(result, polar_bias, rtol=1e-3)
+
+
+def test_angular_error_perfect_estimation():
+    """Test angular_error returns zero for identical directions."""
+    coords = pf.Coordinates.from_cartesian(
+        x=np.array([1, 0, 0]),
+        y=np.array([0, 1, 0]),
+        z=np.array([0, 0, 1]),
+    )
+
+    error = localization_error(coords, coords, 'angular_error')
+    assert np.isclose(error, 0.0, atol=1e-10)
+
+
+def test_angular_error_perpendicular():
+    """Test angular_error returns π/2 for perpendicular unit vectors."""
+    targets = pf.Coordinates.from_cartesian(
+        x=np.array([1]),
+        y=np.array([0]),
+        z=np.array([0]),
+    )
+    estimations = pf.Coordinates.from_cartesian(
+        x=np.array([0]),
+        y=np.array([1]),
+        z=np.array([0]),
+    )
+
+    error = localization_error(targets, estimations, 'angular_error')
+    assert np.isclose(error, np.pi / 2, rtol=1e-5)
+
+
+def test_angular_error_opposite():
+    """Test angular_error returns π for opposite unit vectors."""
+    targets = pf.Coordinates.from_cartesian(
+        x=np.array([1]),
+        y=np.array([0]),
+        z=np.array([0]),
+    )
+    estimations = pf.Coordinates.from_cartesian(
+        x=np.array([-1]),
+        y=np.array([0]),
+        z=np.array([0]),
+    )
+
+    error = localization_error(targets, estimations, 'angular_error')
+    assert np.isclose(error, np.pi, rtol=1e-5)
+
+
+def test_angular_error_known_output():
+    """Test angular_error with two known angles and verify the mean."""
+    # Two pairs of directions with known angular separation:
+    # Pair 1: 60° apart (cos60° = 0.5)
+    # Pair 2: 90° apart (cos90° = 0.0)
+    # Expected mean = (π/3 + π/2) / 2
+    targets = pf.Coordinates.from_cartesian(
+        x=np.array([1.0, 1.0]),
+        y=np.array([0.0, 0.0]),
+        z=np.array([0.0, 0.0]),
+    )
+    estimations = pf.Coordinates.from_cartesian(
+        x=np.array([0.5, 0.0]),       # 60° from [1,0,0]
+        y=np.array([np.sqrt(3)/2, 1.0]),  # and 90° from [1,0,0]
+        z=np.array([0.0, 0.0]),
+    )
+
+    expected = (np.pi / 3 + np.pi / 2) / 2
+    error = localization_error(targets, estimations, 'angular_error')
+    assert np.isclose(error, expected, rtol=1e-5)
+
+
+def test_angular_error_non_unit_vectors():
+    """
+    Test angular_error handles non-unit vectors correctly via normalization.
+    """
+    # Both point in the same direction as [1,0,0] vs [0,1,0]
+    targets = pf.Coordinates.from_cartesian(
+        x=np.array([2.0]),
+        y=np.array([0.0]),
+        z=np.array([0.0]),
+    )
+    estimations = pf.Coordinates.from_cartesian(
+        x=np.array([0.0]),
+        y=np.array([2.0]),
+        z=np.array([0.0]),
+    )
+
+    # dot(t, e) = 0 → arccos(0) = π/2 regardless of magnitude
+    # (assuming the vectors are used as-is, not normalized)
+    error = localization_error(targets, estimations, 'angular_error')
+    assert np.isclose(error, np.pi / 2, rtol=1e-5)
+
+
+def test_angular_error_registered_as_cartesian():
+    """Test that angular_error metadata specifies cartesian convention."""
+    metadata = get_metric_metadata('angular_error')
+    assert metadata['coord_convention'] == 'cartesian'
+    assert metadata['input_unit'] == 'meters'
+    assert metadata['output_unit'] == 'radians'
 
 
 # =============================================================================

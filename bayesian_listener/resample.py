@@ -7,6 +7,7 @@ import spharpy as sy
 import spaudiopy
 import pyfar as pf
 import warnings
+from bayesian_listener import utils
 
 # -----------------------------------------------------------------------------
 # SPHERICAL INTERPOLATION
@@ -169,7 +170,10 @@ def resample_two_step(cues, coordinates, template, second_step, **kwargs):
         regularisation_coefficient : float, default=1e-2
             Regularisation weight for the Bau damping matrix.
         condition_threshold : float, default=12.25
-            Condition number condition_thresholdold for :func:`find_max_order`.
+            Condition number threshold for :func:`find_max_order`.
+        norm : {1, 2}, default=1
+            Gain normalisation for the ``'barycentric'`` method.
+            Forwarded to :func:`~bayesian_listener.utils.vbap_interpolate`.
 
     Returns
     -------
@@ -181,6 +185,7 @@ def resample_two_step(cues, coordinates, template, second_step, **kwargs):
     """
     regularisation_coefficient = kwargs.get('regularisation_coefficient', 1e-2)
     condition_threshold = kwargs.get('condition_threshold', 12.25)
+    norm = kwargs.get('norm', 1)
 
     # check input format
     if not isinstance(cues, (list, tuple)):
@@ -202,7 +207,7 @@ def resample_two_step(cues, coordinates, template, second_step, **kwargs):
         # %% Generate t-design points
         # the advantage of using this is that
         # the weights are equal when integrating
-        template = spaudiopy.grids.load_n_design(64)# 2112 equally distant points
+        template = utils.load_n_design(64)  # 2112 equally distant points
         template = pf.Coordinates.from_cartesian(template[:, 0],
                                                  template[:, 1],
                                                  template[:, 2])
@@ -229,12 +234,9 @@ def resample_two_step(cues, coordinates, template, second_step, **kwargs):
     # perform second interpolation step
     if second_step.lower() == 'barycentric':
         # compute interpolation weights
-        convex_hull = spaudiopy.decoder.LoudspeakerSetup(
-            coordinates_complemented.x,
-            coordinates_complemented.y,
-            coordinates_complemented.z)
-        weights = spaudiopy.decoder.vbap(
-            template.cartesian, convex_hull, norm=1)
+        weights = utils.vbap_interpolate(template.cartesian,
+                                         coordinates_complemented.cartesian,
+                                         norm=norm)
 
         # apply as matrix multiplication
         cues = [weights @ c for c in cues]
@@ -335,7 +337,7 @@ def resample_barumerli2023(values,
         # %% Generate t-design points
         # the advantage of using this is that
         # the weights are equal when integrating
-        dirs = spaudiopy.grids.load_n_design(64)# 2112 equally distant points
+        dirs = utils.load_n_design(64)  # 2112 equally distant points
         template = pf.Coordinates.from_cartesian(dirs[:, 0],
                                                  dirs[:, 1],
                                                  dirs[:, 2])
@@ -417,7 +419,7 @@ def resample(cues, coordinates, template=None, method='SH', **kwargs):
     **kwargs
         Forwarded to :func:`resample_two_step` for 'SH', 'SHMAX', and
         'barycentric' methods.  See :func:`resample_two_step` for details
-        (``regularisation_coefficient``, ``condition_threshold``).
+        (``regularisation_coefficient``, ``condition_threshold``, ``norm``).
 
     Returns
     -------

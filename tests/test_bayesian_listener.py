@@ -1,6 +1,7 @@
 import pytest
 import numpy as np
 import pyfar as pf
+import sofar
 from pathlib import Path
 import urllib.request
 from bayesian_listener import BayesianListener
@@ -168,6 +169,43 @@ def test_interp():
         "Template min should not be significantly below original min"
     assert template_max <= target_max + margin, \
         "Template max should not be significantly above original max"
+
+
+def test_sofa_object_input():
+    """Test that BayesianListener accepts a sofar.Sofa object directly (#32)."""
+    sofa_file = get_sofa_file()
+    sofa_data = sofar.read_sofa(sofa_file, verbose=False)
+
+    am = BayesianListener(sofa_data)
+
+    assert am.sofa_file is None
+    assert isinstance(am.coords, pf.Coordinates)
+    assert am.hrir is not None
+    assert am.fs > 0
+
+
+def test_sofa_object_no_sofa_data_attr():
+    """Test that BayesianListener does not store sofa_data on self (#31)."""
+    sofa_file = get_sofa_file()
+
+    am_path = BayesianListener(sofa_file)
+    assert not hasattr(am_path, 'sofa_data')
+
+    sofa_data = sofar.read_sofa(sofa_file, verbose=False)
+    am_obj = BayesianListener(sofa_data)
+    assert not hasattr(am_obj, 'sofa_data')
+
+
+def test_sofa_object_prepare_features():
+    """Test that prepare_features works with sofar.Sofa input (#32)."""
+    sofa_file = get_sofa_file()
+    sofa_data = sofar.read_sofa(sofa_file, verbose=False)
+
+    am = BayesianListener(sofa_data)
+    am.prepare_features(use_cache=False)
+
+    assert hasattr(am, 'itd')
+    assert hasattr(am, 'template')
 
 
 def test_load_cached_data():

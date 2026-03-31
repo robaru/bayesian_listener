@@ -1,6 +1,7 @@
 """This model contains helpful utility functions."""
 import numpy as np
 from scipy.signal import butter, hilbert, correlate, lfilter
+from scipy.io import loadmat
 from math import factorial
 from numba import jit, prange
 from joblib import Parallel, delayed
@@ -795,4 +796,111 @@ def compute_features(hrir, coords, fs, spectral_range=[7e2, 18e3]):
     spectral_cues = mag2db(rms).transpose(1, 0, 2)
 
     return itd, ild, spectral_cues, freqs
+
+
+def load_n_design(degree):
+    """Load a spherical t-design (n-design) grid of the given degree.
+
+    Points are loaded from a bundled .mat file covering degrees 1–124.
+    These are Chebyshev-type quadrature rules on the unit sphere, equivalent
+    to modern t-designs.
+
+    Parameters
+    ----------
+    degree : int
+        Degree of exactness, between 1 and 124.
+
+    Returns
+    -------
+    vecs : ndarray, shape (M, 3)
+        Cartesian coordinates of the grid points on the unit sphere.
+
+    References
+    ----------
+    The grid data (``n_designs_1_124.mat``) was originally published by
+    Manuel Gräf at https://homepage.univie.ac.at/manuel.graef/quadrature.php
+    and redistributed by spaudiopy (MIT License, Copyright 2019 Chris Hold).
+    The upstream data source does not carry an explicit license.
+    """
+    if degree < 1 or degree > 124:
+        raise ValueError('degree must be between 1 and 124.')
+
+    mat_path = Path(__file__).parent / 'data' / 'n_designs_1_124.mat'
+    mat = loadmat(mat_path)
+
+    key = 'N' + f'{degree:03}'
+    if key not in mat:
+        return load_n_design(degree + 1)
+
+    return mat[key]
+
+
+def vbap_interpolate(src, grid, norm=1):
+    """Compute VBAP interpolation weights on the unit sphere.
+
+    For each source direction, finds the enclosing triangle on the convex hull
+    of `grid` and returns the panning gains normalised according to `norm`.
+
+    Parameters
+    ----------
+    src : ndarray, shape (n_src, 3)
+        Cartesian coordinates of target directions.
+    grid : ndarray, shape (n_grid, 3)
+        Cartesian coordinates of the source grid (unit sphere).
+    norm : {1, 2}, default=1
+        Gain normalisation:
+        ``1`` — gains sum to 1 (anechoic, equivalent to barycentric
+        interpolation);
+        ``2`` — sum of squared gains equals 1 (energy-preserving /
+        reverberant).
+
+    Returns
+    -------
+    weights : ndarray, shape (n_src, n_grid)
+        Sparse-like weight matrix. Each row has at most 3 non-zero entries
+        normalised according to `norm`.
+
+    References
+    ----------
+    Algorithm adapted from spaudiopy (MIT License, Copyright 2019 Chris Hold,
+    https://github.com/chris-hold/spaudiopy), based on:
+    Pulkki, V. (1997). Virtual Sound Source Positioning Using Vector Base
+    Amplitude Panning. JAES, 45(6), 456–466.
+    """
+    from scipy.spatial import ConvexHull
+
+    if norm not in (1, 2):
+        raise ValueError('norm must be 1 or 2.')
+
+    hull = ConvexHull(grid)
+    n_src = src.shape[0]
+    n_grid = grid.shape[0]
+    weights = np.zeros((n_src, n_grid))
+
+    for i, s in enumerate(src):
+        best_tri = None
+        best_g = None
+        best_neg = np.inf
+
+        for simplex in hull.simplices:
+            V = grid[simplex].T          # (3, 3)
+            try:
+                g = np.linalg.solve(V, s)
+            except np.linalg.LinAlgError:
+                continue
+            neg = -np.min(g)             # 0 if all gains >= 0
+            if neg < best_neg:
+                best_neg = neg
+                best_tri = simplex
+                best_g = g
+
+        if best_tri is not None:
+            g = np.maximum(best_g, 0)
+            if norm == 1:
+                g /= g.sum()
+            else:
+                g /= np.sqrt(np.sum(g ** 2))
+            weights[i, best_tri] = g
+
+    return weights
 # %%

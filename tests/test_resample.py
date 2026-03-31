@@ -41,6 +41,78 @@ def test_resample_two_step_custom_condition_threshold():
     assert n_loose >= n_tight
 
 
+def test_resample_barycentric():
+    """barycentric path runs and weights sum to 1 for each target."""
+    cues, coords = make_grid()
+    out, template = resample_two_step(cues, coords, None, 'barycentric')
+    assert out.shape[1] == cues.shape[1]
+    assert out.shape[0] == template.csize
+
+
+def test_vbap_interpolate_weights():
+    """vbap_interpolate returns rows summing to 1 with at most 3 non-zeros."""
+    from bayesian_listener.utils import vbap_interpolate
+    _, coords = make_grid()
+    grid = coords.cartesian
+    src = grid[:5]
+    weights = vbap_interpolate(src, grid)
+    assert weights.shape == (5, grid.shape[0])
+    np.testing.assert_allclose(weights.sum(axis=1), 1.0, atol=1e-10)
+    for row in weights:
+        assert np.sum(row > 0) <= 3
+
+
+def test_vbap_interpolate_norm2():
+    """norm=2 rows have unit L2 norm and differ from norm=1 for off-grid src."""
+    from bayesian_listener.utils import vbap_interpolate
+    # full-sphere grid so all targets are enclosed
+    az = np.deg2rad(np.arange(0, 360, 30))
+    el = np.deg2rad(np.array([-60, -30, 0, 30, 60]))
+    az_grid, el_grid = np.meshgrid(az, el)
+    coords = pf.Coordinates(az_grid.ravel(), el_grid.ravel(),
+                            np.ones(az_grid.size),
+                            domain='sph', convention='top_elev')
+    grid = coords.cartesian
+    rng = np.random.default_rng(7)
+    src = rng.standard_normal((5, 3))
+    src /= np.linalg.norm(src, axis=1, keepdims=True)
+    w1 = vbap_interpolate(src, grid, norm=1)
+    w2 = vbap_interpolate(src, grid, norm=2)
+    l2_norms = np.sqrt(np.sum(w2 ** 2, axis=1))
+    np.testing.assert_allclose(l2_norms, 1.0, atol=1e-10)
+    assert not np.allclose(w1, w2)
+
+
+def test_vbap_interpolate_matches_spaudiopy():
+    """vbap_interpolate matches spaudiopy.decoder.vbap (norm=1) to 1e-6.
+
+    Uses a full-sphere grid (both hemispheres) so all target directions are
+    enclosed by the convex hull, matching the actual use case in
+    resample_two_step where complement_sampling fills the bottom first.
+    """
+    import spaudiopy
+    from bayesian_listener.utils import vbap_interpolate
+
+    # full sphere grid
+    az = np.deg2rad(np.arange(0, 360, 30))
+    el = np.deg2rad(np.array([-60, -30, 0, 30, 60]))
+    az_grid, el_grid = np.meshgrid(az, el)
+    coords = pf.Coordinates(az_grid.ravel(), el_grid.ravel(),
+                            np.ones(az_grid.size),
+                            domain='sph', convention='top_elev')
+    grid = coords.cartesian
+
+    rng = np.random.default_rng(42)
+    src = rng.standard_normal((10, 3))
+    src /= np.linalg.norm(src, axis=1, keepdims=True)
+
+    hull = spaudiopy.decoder.LoudspeakerSetup(grid[:, 0], grid[:, 1], grid[:, 2])
+    w_spa = spaudiopy.decoder.vbap(src, hull, norm=1)
+    w_ours = vbap_interpolate(src, grid)
+
+    np.testing.assert_allclose(w_ours, w_spa, atol=1e-6)
+
+
 def test_resample_kwargs_forwarded():
     """resample() forwards kwargs to resample_two_step."""
     cues, coords = make_grid()

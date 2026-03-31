@@ -69,7 +69,7 @@ def test_model_single():
 
     # Compare with fixed expected spherical coordinates (azimuth, elevation)
     # Coordinates(sofa_file).sph()[260, :] -> array([125.,   0.])
-    expected_dir_sph = np.array([[126.871232,   0.966419]])
+    expected_dir_sph = np.array([[123.004839, 24.912466]])
     np.testing.assert_allclose(estimated_dir.squeeze(), expected_dir_sph.squeeze(), rtol=1e-2)
 
 

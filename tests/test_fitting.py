@@ -84,7 +84,7 @@ def model_and_arrays(fitting_data):
     model.prepare_features(interpolation='SH')
 
     target_indices = model.coords.find_nearest(targets_coords)[0][0]
-    targets = model.represent()[target_indices, :]
+    targets = model.target[target_indices]
 
     subj_data = obs_tbl[obs_tbl['participant'] == 'test_subj']
     resp_coords = pf.Coordinates.from_spherical_elevation(

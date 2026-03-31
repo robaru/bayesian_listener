@@ -197,8 +197,8 @@ def estimate_motor_noise(model, obs_tbl, targets_coords, subject_id=None,
 
     # Target ITD+ILD features
     target_indices = model.coords.find_nearest(targets_coords)[0][0]
-    target_itd = model.itd[target_indices].flatten()
-    target_ild = model.ild[target_indices].flatten()
+    target_itd = model.target.itd[target_indices].flatten()
+    target_ild = model.target.ild[target_indices].flatten()
 
     # Response lateral angles
     resp_coords = pf.Coordinates.from_spherical_elevation(
@@ -309,7 +309,8 @@ def negloglik(model, targets, responses, resp_targets_idx, sigmas_log,
     }
 
     # Run model WITHOUT motor noise to get MAP predictions
-    posterior = model.infer(targets, repetitions=num_exp)
+    model.target = targets
+    posterior = model.infer(repetitions=num_exp)
 
     # Get MAP estimates without motor noise
     doa_estimations = model.estimate(posterior, kappa_motor=False).cartesian  # (n_targets x num_exp x 3)
@@ -607,9 +608,9 @@ def fit_listener_partial(sofa_path, obs_tbl, targets_coords,
         model = BayesianListener(sofa_path)
         model.prepare_features(interpolation=interpolation_method)
 
-        # Extract features
+        # Extract features as AuditoryRepresentation subset
         target_indices = model.coords.find_nearest(targets_coords)[0][0]
-        targets = model.represent()[target_indices, :]
+        targets = model.target[target_indices]
 
         # Build response coordinates
         resp_coords = pf.Coordinates.from_spherical_elevation(

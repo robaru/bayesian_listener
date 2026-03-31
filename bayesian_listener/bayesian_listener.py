@@ -6,12 +6,19 @@ import matplotlib.pyplot as plt
 from scipy.special import logsumexp
 from bayesian_listener import utils
 from bayesian_listener import resample
+from bayesian_listener.auditory_representation import (
+    AuditoryRepresentation, Barumerli2025, CONVENTIONS)
 from pathlib import Path
 
 class BayesianListener:
     """Bayesian model of human sound localisation using HRTF-derived cues."""
 
-    def __init__(self, sofa):
+    def __init__(self, sofa,
+                 sigma_itd=0.569,
+                 sigma_ild=1.0,
+                 sigma_spectral=10.4,
+                 sigma_prior=69.0,
+                 kappa_motor=23.31):
         """Initialize listener from SOFA file or in-memory Sofa object.
 
         Parameters
@@ -55,15 +62,17 @@ class BayesianListener:
                                      domain='sph', convention='top_elev',
                                      unit='deg')
 
-        # noise parameters
-        # these values are the group average got from the 2026 paper.
+        # noise and prior parameters (group average, Barumerli et al. 2025)
         self.parameters = {
-            "sigma_itd": 0.569,
-            "sigma_ild": 1.0,
-            "sigma_spectral": 10.4,
-            "sigma_prior": 69.0,
-            "kappa_motor": 23.31,  # ~12 deg via Bessel-based conversion
+            'sigma_itd':      sigma_itd,
+            'sigma_ild':      sigma_ild,
+            'sigma_spectral': sigma_spectral,
+            'sigma_prior':    sigma_prior,
+            'kappa_motor':    kappa_motor,
         }
+
+        self._target = None
+        self._template = None
 
     @property
     def parameters(self):
@@ -73,11 +82,6 @@ class BayesianListener:
     def parameters(self, value):
         if not isinstance(value, dict):
             raise ValueError("Parameters must be a dictionary.")
-        # backward compatibility: migrate sigma_motor -> kappa_motor
-        if 'sigma_motor' in value and 'kappa_motor' not in value:
-            from bayesian_listener.fitting import sigma_to_kappa
-            sigma_m = value.pop('sigma_motor')
-            value['kappa_motor'] = sigma_to_kappa(sigma_m) if sigma_m else 0
         # check if all parameters are present
         for key in [
             'sigma_itd',
@@ -90,377 +94,326 @@ class BayesianListener:
                 raise ValueError(f"Missing parameter: {key}")
         self._parameters = value
 
-    def interpolate(self, interpolation='SH'):
-        """Resample cues to a uniform spherical grid for internal templates.
+    @property
+    def sigma_itd(self):
+        return self.parameters['sigma_itd']
 
-        Templates are used during inference to compare against target features.
-        This resampling ensures a consistent spatial resolution.
+    @sigma_itd.setter
+    def sigma_itd(self, v):
+        self.parameters['sigma_itd'] = v
+
+    @property
+    def sigma_ild(self):
+        return self.parameters['sigma_ild']
+
+    @sigma_ild.setter
+    def sigma_ild(self, v):
+        self.parameters['sigma_ild'] = v
+
+    @property
+    def sigma_spectral(self):
+        return self.parameters['sigma_spectral']
+
+    @sigma_spectral.setter
+    def sigma_spectral(self, v):
+        self.parameters['sigma_spectral'] = v
+
+    @property
+    def sigma_prior(self):
+        return self.parameters['sigma_prior']
+
+    @sigma_prior.setter
+    def sigma_prior(self, v):
+        self.parameters['sigma_prior'] = v
+
+    @property
+    def kappa_motor(self):
+        return self.parameters['kappa_motor']
+
+    @kappa_motor.setter
+    def kappa_motor(self, v):
+        self.parameters['kappa_motor'] = v
+
+    @property
+    def sigma_motor(self):
+        """Motor noise in degrees (converted from ``kappa_motor``)."""
+        from bayesian_listener.fitting import kappa_to_sigma
+        return kappa_to_sigma(self.parameters['kappa_motor'])
+
+    @sigma_motor.setter
+    def sigma_motor(self, value):
+        from bayesian_listener.fitting import sigma_to_kappa
+        self.parameters['kappa_motor'] = sigma_to_kappa(value)
+
+    @property
+    def target(self):
+        """AuditoryRepresentation or None — what the listener is hearing."""
+        return self._target
+
+    @target.setter
+    def target(self, value):
+        if value is not None and not isinstance(value, AuditoryRepresentation):
+            raise TypeError('target must be an AuditoryRepresentation.')
+        self._target = value
+
+    @property
+    def template(self):
+        """AuditoryRepresentation or None — the listener's internal model."""
+        return self._template
+
+    @template.setter
+    def template(self, value):
+        if value is not None and not isinstance(value, AuditoryRepresentation):
+            raise TypeError('template must be an AuditoryRepresentation.')
+        self._template = value
+
+    def _interpolate(self, ar, interpolation='SHMAX', interpolation_grid=None):
+        """Resample an AuditoryRepresentation onto a uniform grid.
 
         Parameters
         ----------
-        interpolation : {'SH', 'SHmax', 'barycentric', 'barumerli2023'}, default='SH'
+        ar : AuditoryRepresentation
+            Source representation to interpolate.
+        interpolation : {'SH', 'SHmax', 'barycentric', 'barumerli2023'}, default='SHMAX'
             Interpolation method:
             - 'SH': Spherical harmonics interpolation with SH truncation.
-            - 'SHmax': Spherical harmonics with high SH order.
+            - 'SHMAX': Spherical harmonics with high SH order.
             - 'barycentric': Barycentric interpolation on triangulated mesh.
             - 'barumerli2023': Method from Barumerli et al. (2023).
+        interpolation_grid : pyfar.Coordinates or None
+            Target grid; ``None`` uses the method's default uniform grid.
 
         Returns
         -------
-        BayesianListener
-            New instance with resampled cues on uniform grid.
+        AuditoryRepresentation
+            Same subclass as ``ar``, resampled onto the uniform grid.
         """
-        # Create empty instance
-        model = BayesianListener.__new__(BayesianListener)
-
-        # Resample all cues in a single call
         cues_list = [
-            self.itd,
-            self.ild,
-            self.spectral_cues[:, :, 0],
-            self.spectral_cues[:, :, 1],
+            ar.itd,
+            ar.ild,
+            ar.spectral_cues[:, :, 0],
+            ar.spectral_cues[:, :, 1],
         ]
+        resampled_cues, coords_new = resample.resample(
+            cues_list, ar.coords, interpolation_grid, method=interpolation)
 
-        resampled_cues, coords_new = resample.resample(cues_list,
-                                                       self.coords,
-                                                       self.interpolation_grid,
-                                                       method=interpolation)
+        return type(ar)(
+            coords=coords_new,
+            itd=resampled_cues[0],
+            ild=resampled_cues[1],
+            spectral_cues=np.stack([resampled_cues[2],
+                                    resampled_cues[3]], axis=-1),
+            freqs=ar.freqs,
+        )
 
-        # Unpack results
-        model.itd = resampled_cues[0]
-        model.ild = resampled_cues[1]
-        model.spectral_cues = np.stack([resampled_cues[2],
-                                        resampled_cues[3]],
-                                       axis=-1)
-        model.coords = coords_new
-        model.freqs = self.freqs
-        # model.coords.plot(model.spectral_cues[:, 5, 0])
-        # self.coords.plot(self.spectral_cues[:, 5, 0])
+    def compute_target(self, convention='barumerli2025', spectral_range=None):
+        """Compute raw auditory representation from ``self.hrir``.
 
-        return model
+        Sets ``self.target``.  No interpolation is performed.
 
-    # prepare
+        Parameters
+        ----------
+        convention : str, default='barumerli2025'
+        spectral_range : list of float or None, default=[700, 18000]
+        """
+        if spectral_range is None:
+            spectral_range = [7e2, 18e3]
+        if convention not in CONVENTIONS:
+            raise ValueError(
+                f"Unknown convention '{convention}'. "
+                f"Available: {list(CONVENTIONS)}")
+        itd, ild, spectral_cues, freqs = utils.compute_features(
+            self.hrir, self.coords, self.fs, spectral_range)
+        self.target = CONVENTIONS[convention](
+            coords=self.coords,
+            itd=itd,
+            ild=ild,
+            spectral_cues=spectral_cues,
+            freqs=freqs,
+        )
+
+    def compute_template(self, interpolation='SHMAX', interpolation_grid=None):
+        """Interpolate ``self.target`` onto a uniform grid.
+
+        Sets ``self.template``.  Must call ``compute_target()`` first.
+
+        Parameters
+        ----------
+        interpolation : str, default='SHMAX'
+        interpolation_grid : pyfar.Coordinates or None
+        """
+        if self.target is None:
+            raise ValueError(
+                'Call compute_target() before compute_template().')
+        self.template = self._interpolate(
+            self.target, interpolation, interpolation_grid)
+
     def prepare_features(self,
-                         spectral_range=[7e2, 18e3],
+                         spectral_range=None,
                          interpolation='SHMAX',
                          interpolation_grid=None,
                          use_cache=True,
                          force_recompute=False,
-                         cache_dir=None):
-        """Compute spatial features and templates, with optional caching.
+                         cache_dir=None,
+                         compute_template=True):
+        """Compute features and optionally the template, with caching.
 
-        Extracts ITD, ILD, and spectral cues from the HRIRs via a gammatone
-        filterbank, then interpolates them onto a uniform grid to produce the
-        inference template.  Results are loaded from disk when available and
-        saved after computation (unless ``self.sofa_file`` is ``None``).
+        Calls :meth:`compute_target` then :meth:`compute_template`.
+        Set ``compute_template=False`` to skip interpolation (non-individual
+        localisation, where only target features are needed).
 
         Parameters
         ----------
-        spectral_range : list of float, default=[700, 18000]
-            Frequency range [low, high] in Hz used for spectral cue extraction.
+        spectral_range : list of float or None, default=[700, 18000]
         interpolation : str, default='SHMAX'
-            Interpolation method for template generation.
-            One of ``'SH'``, ``'SHMAX'``, ``'barumerli2023'``, ``'barycentric'``.
-        interpolation_grid : pyfar.Coordinates or None, default=None
-            Target grid for interpolation.  ``None`` uses the default uniform
-            grid defined by the chosen interpolation method.
+        interpolation_grid : pyfar.Coordinates or None
         use_cache : bool, default=True
-            If ``True``, attempt to load features from cache before computing.
-            Caching is silently skipped when the listener was initialised
-            with a ``sofar.Sofa`` object (``self.sofa_file`` is ``None``).
         force_recompute : bool, default=False
-            If ``True``, ignore any cached data and recompute from scratch
-            (the new result is still written to cache).
-        cache_dir : str or Path, optional
-            Directory for cached features.  Defaults to
-            ``<cwd>/data/preprocessed``.
-
-        Notes
-        -----
-        After this method returns, the following attributes are set:
-        ``itd``, ``ild``, ``spectral_cues``, ``freqs``, ``template``.
+        cache_dir : str or Path or None
+        compute_template : bool, default=True
         """
+        if spectral_range is None:
+            spectral_range = [7e2, 18e3]
         if cache_dir is None:
             cache_dir = Path.cwd() / 'data' / 'preprocessed'
         else:
             cache_dir = Path(cache_dir)
         self.cache_dir = cache_dir
 
-        self.interpolation_grid = interpolation_grid
-
-        if use_cache:
-            return self._load_or_compute_features(spectral_range,
-                                                  interpolation,
-                                                  force_recompute)
-        else:
-            return self._compute_features(spectral_range, interpolation)
-
-    def _compute_features(self,
-                          spectral_range = [7e2, 18e3],
-                          interpolation='SHMAX'):
-        """Compute ITD, ILD, and spectral cues from HRIRs and build the template.
-
-        Runs the full feature extraction pipeline via a gammatone filterbank
-        and interpolates the results onto a uniform grid.  Sets ``self.itd``,
-        ``self.ild``, ``self.spectral_cues``, ``self.freqs``, and
-        ``self.template`` in place.
-
-        Parameters
-        ----------
-        spectral_range : list of float, default=[700, 18000]
-            Frequency range [low, high] in Hz for spectral cue extraction.
-        interpolation : str, default='SH'
-            Interpolation method passed to :meth:`interpolate`.
-        """
-        self.itd, self.ild, self.spectral_cues, self.freqs = \
-            utils.compute_features(self.hrir, self.coords, self.fs,
-                                   spectral_range)
-
-        # prepare templates on uniform grid
-        self.template = self.interpolate(interpolation)
-
-    def _load_or_compute_features(self,
-                                  spectral_range=[7e2, 18e3],
-                                  interpolation='SHMAX',
-                                  force_recompute=False):
-        """Load features from cache, or compute and save them.
-
-        Attempts to restore ``itd``, ``ild``, ``spectral_cues``, ``freqs``,
-        ``coords``, ``parameters``, and ``template`` from disk.  Falls back to
-        :meth:`_compute_features` on a cache miss and writes the result to
-        disk afterwards.  Caching is skipped entirely when ``self.sofa_file``
-        is ``None`` (i.e. the listener was initialised with a ``sofar.Sofa``
-        object).
-
-        Parameters
-        ----------
-        spectral_range : list of float, default=[700, 18000]
-            Frequency range [low, high] in Hz for spectral cue extraction.
-        interpolation : str, default='SHMAX'
-            Interpolation method passed to :meth:`_compute_features`.
-        force_recompute : bool, default=False
-            If ``True``, ignore any cached data and recompute from scratch.
-            The new result is still written to cache.
-        """
-        cache_dir = self.cache_dir
-
-        # Define what attributes to cache/restore
-        cache_attributes = [
-            'itd', 'ild', 'freqs', 'spectral_cues',
-            'coords', 'parameters', 'template',
-        ]
-
-        # ========== Try to load from cache ==========
-        if not force_recompute and self.sofa_file is not None:
-            cached_data = utils.load_from_cache(cache_dir,
-                                                self.sofa_file,
-                                                cache_attributes,
-                                                interpolation)
-
-            if cached_data is not None:
-                # Restore cached attributes
-                for attr in cache_attributes:
-                    setattr(self, attr, cached_data[attr])
+        if use_cache and compute_template and not force_recompute \
+                and self.sofa_file is not None:
+            cached = utils.load_from_cache(
+                cache_dir, self.sofa_file,
+                ['target', 'template'], interpolation)
+            if cached is not None:
+                self.target = cached['target']
+                self.template = cached['template']
                 return
+            print('  Cache not found or invalid. Recomputing...')
 
-            print("  Cache not found or invalid. Recomputing...")
+        print('→ Computing features...')
+        self.compute_target(spectral_range=spectral_range)
+        if compute_template:
+            self.compute_template(interpolation=interpolation,
+                                  interpolation_grid=interpolation_grid)
+        print('✓ Feature preparation complete')
 
-        # ========== Compute features ==========
-        print("→ Computing features...")
-        self._compute_features(spectral_range=spectral_range,
-                               interpolation=interpolation)
-        print("✓ Feature preparation complete")
+        if compute_template and self.sofa_file is not None:
+            utils.save_to_cache(
+                cache_dir, self.sofa_file,
+                {'target': self.target, 'template': self.template},
+                interpolation)
 
-        # ========== Save to cache ==========
-        if self.sofa_file is not None:
-            # Prepare data to cache
-            cache_data = {
-                attr: getattr(self, attr) for attr in cache_attributes
-                }
-            utils.save_to_cache(cache_dir,
-                                self.sofa_file,
-                                cache_data,
-                                interpolation)
-        # return internal representation
-
-    def represent(self):
-        """Return concatenated feature vector [ITD, ILD, spectral_L, spectral_R].
-
-        Returns
-        -------
-        ndarray
-            Feature matrix of shape (n_directions, n_features).
-        """
-        bcue = np.hstack([self.itd,
-                          self.ild])
-
-        scue = np.hstack([self.spectral_cues[:, :, 0],
-                          self.spectral_cues[:, :, 1]])
-
-        return np.hstack([bcue,
-                          scue])
 
     def infer(self,
-              target = None,
-              repetitions = 50,
-              prior = 'horizontal',
-              store_posterior = False,
-              seed = None):
+              repetitions=50,
+              prior='horizontal',
+              store_posterior=False,
+              seed=None):
         """Perform Bayesian inference to estimate sound source direction.
 
         Parameters
         ----------
-        target : array-like, optional
-            Target spatial features to localise
-            (if None, uses features from listener's own HRIR).
         repetitions : int, default=50
-            Number of Monte Carlo samples
-            (i.e. number of repetitions for each target).
-        seed : int, optional
-            Random seed for reproducibility.
         prior : {'uniform', 'horizontal'} or ndarray, default='horizontal'
-            Prior distribution over directions. 'horizontal' biases toward
-            the horizontal plane; 'uniform' weights all directions equally.
-            User can provide custom prior as ndarray (templates :math:`\times` 1).
         store_posterior : bool, default=False
-            If True, returns full log-posterior
-            (warning: this increase memory usage);
-            otherwise returns indices of maximum a posteriori estimates
-            (see :py:meth:`~estimate` for details).
+        seed : int or None
 
         Returns
         -------
         ndarray
-            If ``store_posterior=True``: log-posteriors of shape
-            (targets :math:`\times` repetitions :math:`\times` templates).
-            Otherwise: Estimated template indices of shape
-            (targets :math:`\times` repetitions).
+            MAP indices ``(targets × repetitions)`` or log-posteriors
+            ``(targets × repetitions × templates)`` if ``store_posterior=True``.
         """
-
-        if not hasattr(self, 'itd'):
+        if self.target is None:
             raise ValueError(
-                'Features not computed. Call prepare_features() before infer().'
-            )
+                'Target not set. Call compute_target() or set self.target.')
+        if self.template is None:
+            raise ValueError(
+                'Template not set. Call compute_template() or set self.template.')
+        if type(self.target) is not type(self.template):
+            raise ValueError(
+                f'Convention mismatch: '
+                f'target={self.target.convention!r}, '
+                f'template={self.template.convention!r}.')
 
         rng = np.random.default_rng(seed)
 
-        # prepare features
-        # use original HRIR if no target is provided
-        if target is None:
-            target_feat = self.represent()
-            target_num = target_feat.shape[0]
-        else:
-            target_feat = target
-            if target_feat.ndim == 1:
-                target_feat = np.expand_dims(target_feat, axis=0)
-            target_num = np.size(target_feat, 0)
+        target_feat  = self.target.features
+        target_num   = target_feat.shape[0]
+        template_feat = self.template.features
 
-        # prepare template features - horrible concatenation but it works
-        template_feat = self.template.represent()
+        sigma = self.target.sigma_matrix(self.parameters)
+
+        vals, vecs = np.linalg.eigh(sigma)
+        logdet = np.sum(np.log(vals))
+        Us = vecs * np.sqrt(1. / vals)[:, None]
 
         sigmas = self.parameters
-        sigma = np.block(np.diag(np.hstack(
-            [sigmas["sigma_itd"]**2,
-             sigmas["sigma_ild"]**2,
-             np.repeat(sigmas["sigma_spectral"]**2, self.freqs.shape[0]*2),
-            ])))
-
-        # the following code is needed to speed up multiple_logpdfs_vec_input
-        # since here the covariance matrix is constant NumPy broadcasts `eigh`.
-        vals, vecs = np.linalg.eigh(sigma)
-
-        # Compute the log determinants across the second axis.
-        logdet = np.sum(np.log(vals))
-        # Invert the eigenvalues and add a dimension to `valsinvs`
-        # so that NumPy broadcasts appropriately.
-        Us  = vecs * np.sqrt(1./vals)[:, None]
-
-        # Prior computation
         if isinstance(prior, str):
             if prior == 'uniform':
-                # Uniform prior: all directions equally likely
                 prior = np.ones(template_feat.shape[0])
             elif prior == 'horizontal':
-                # Horizontal bias prior:
-                # Gaussian centered on horizontal plane (elevation = 0°)
                 sph = self.template.coords.spherical_elevation
                 prior = np.exp(
-                    -0.5 * (np.rad2deg(sph[:, 1]) / sigmas["sigma_prior"])**2,
-                    )
+                    -0.5 * (np.rad2deg(sph[:, 1]) / sigmas['sigma_prior'])**2)
             else:
                 raise ValueError(
-                    f"Unknown prior: {prior}. "
-                    f"Use 'uniform', 'horizontal', or numpy array")
-            # Normalize to sum to 1 (valid probability distribution)
+                    f"Unknown prior: {prior!r}. "
+                    f"Use 'uniform', 'horizontal', or a numpy array.")
             prior /= np.sum(prior)
         elif isinstance(prior, np.ndarray):
-            # Custom prior provided as array
             if prior.shape[0] != template_feat.shape[0]:
                 raise ValueError(
-                    f"Prior shape mismatch: "
-                    f"{prior.shape[0]} vs {template_feat.shape[0]}")
-            prior = prior / np.sum(prior)  # normalize
+                    f'Prior shape mismatch: '
+                    f'{prior.shape[0]} vs {template_feat.shape[0]}')
+            prior = prior / np.sum(prior)
         else:
             raise TypeError(
-                "Prior must be str ('uniform', 'horizontal') or numpy array")
+                "Prior must be str ('uniform', 'horizontal') or numpy array.")
 
-        # self.template.coords.plot(prior)
-
-        # Internal belief computation
         template_num = template_feat.shape[0]
-        if store_posterior:
-            posterior = np.zeros((target_num, repetitions, template_num))
-        else:
-            posterior_idx = np.zeros((target_num, repetitions), dtype=np.int32)
-
         posterior = np.zeros((target_num, repetitions, template_num))
+        if not store_posterior:
+            posterior_idx = np.zeros(
+                (target_num, repetitions), dtype=np.int32)
 
         if repetitions > 1:
-            L = np.linalg.cholesky(sigma)  # L @ L.T = sigma
+            L = np.linalg.cholesky(sigma)
             for t in range(target_num):
-                ts = np.tile(target_feat[t,:], [repetitions, 1])
+                ts = np.tile(target_feat[t, :], [repetitions, 1])
                 xs = ts + rng.normal(size=ts.shape) @ L.T
                 loglik = utils.multiple_logpdfs_vec_input_single_cov(
-                    xs,template_feat, logdet, Us).squeeze()
+                    xs, template_feat, logdet, Us).squeeze()
                 logpost = loglik + np.log(prior)
-                # normalise in log space for numerical stability
                 logpost = logpost - logsumexp(logpost, axis=1, keepdims=True)
-                # add numerical precision to avoid underflow (i.e. prob = 0)
-                # it also function as a negligible lapse rate
                 logpost = np.logaddexp(
                     logpost, np.log(np.finfo(loglik.dtype).eps))
-                # normalise again
-                # (there is a better way but this is ok for now)
                 logpost = logpost - logsumexp(logpost, axis=1, keepdims=True)
-
                 if store_posterior:
                     posterior[t, :, :] = logpost
                 else:
                     posterior_idx[t, :] = np.argmax(logpost, axis=1)
         else:
             for t in range(target_num):
-                # for ta in range(target_num):
                 # AWGN NOISE
-                x = rng.multivariate_normal(target_feat[t,:], sigma)
+                x = rng.multivariate_normal(target_feat[t, :], sigma)
 
                 # COMPUTE POSTERIOR
-                # using vectorised solution
                 loglik = utils.multiple_logpdfs_vec_input_single_cov(
                     np.expand_dims(x, axis=0),
-                    template_feat,
-                    logdet,
-                    Us,
-                    ).squeeze()
-                # post = np.exp(loglik+np.log(prior))
+                    template_feat, logdet, Us).squeeze()
                 logpost = loglik + np.log(prior)
+
                 # normalise
                 logpost = logpost - logsumexp(logpost)
+
                 # add numerical precision to avoid underflow (i.e. prob = 0)
                 # it also function as a negligible lapse rate
-                logpost = np.logaddexp(logpost,
-                                       np.log(np.finfo(loglik.dtype).eps))
-                # normalise again
-                # (there is a better way but this is ok for now)
+                logpost = np.logaddexp(
+                    logpost, np.log(np.finfo(loglik.dtype).eps))
+
+                # normalise
                 logpost = logpost - logsumexp(logpost)
 
                 # the solution above is faster than the for loop below but I am
@@ -476,13 +429,11 @@ class BayesianListener:
                 # post /= np.sum(post)
                 # logpost = np.log(post+np.finfo(post.dtype).eps)
 
-                # Store posterior -
                 if store_posterior:
                     posterior[t, 0, :] = logpost
                 else:
                     posterior_idx[t, :] = np.argmax(logpost, axis=0)
 
-        # Results
         return posterior if store_posterior else posterior_idx
 
 
@@ -559,13 +510,16 @@ class BayesianListener:
         -------
         fig, ax : matplotlib objects
         """
+        if self.target is None:
+            raise ValueError(
+                'Target not set. Call compute_target() before plot_cues().')
         side = 0 # left/right channel
         dirs = self.coords.spherical_elevation
         dirs[:, 0:2] = np.rad2deg(dirs[:, 0:2])
         # select directions with azimuth almost zero (median frontal plane)
         median_idx = np.abs(dirs[:, 0] - 0) < 2
         elevations = dirs[median_idx,1]
-        amps = self.spectral_cues[median_idx, :, side]
+        amps = self.target.spectral_cues[median_idx, :, side]
 
         # sort by elevations (this avoids jumps in the plot but might
         #  introduce some artifacts if median plane is not uniformely sampled)
@@ -596,8 +550,8 @@ class BayesianListener:
             im.set_clim(np.min(amps), np.max(amps))
 
         ax.set_xticks(np.interp([100, 1e3, 5e3, 1e4],
-                                self.freqs,
-                                np.arange(len(self.freqs))))
+                                self.target.freqs,
+                                np.arange(len(self.target.freqs))))
         ax.set_xticklabels([f'{freq:.0f}' for freq in [100, 1e3, 5e3, 1e4]])
         ax.set_yticks(np.arange(len(elevations)))
         ax.set_yticklabels([f'{elev:.0f}' for elev in elevations])

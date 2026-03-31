@@ -12,27 +12,47 @@ class BayesianListener:
     """Bayesian model of human sound localisation using HRTF-derived cues."""
 
     def __init__(self, sofa):
-        """Initialize listener from SOFA file or object.
+        """Initialize listener from SOFA file or in-memory Sofa object.
 
         Parameters
         ----------
         sofa : str or sofar.Sofa
-            Path to SOFA file or pre-loaded Sofa object.
+            Path to a SOFA file or a pre-loaded ``sofar.Sofa`` object.
+            When a file path is given, it is stored as ``self.sofa_file``
+            and used as a cache key by ``prepare_features``.
+            When a ``sofar.Sofa`` object is given, ``self.sofa_file`` is
+            ``None`` and caching is disabled.
+
+        Attributes
+        ----------
+        sofa_file : str or None
+            Path to the SOFA file, or ``None`` if a Sofa object was passed.
+        hrir : ndarray
+            Head-related impulse responses, shape (n_directions, 2, n_samples).
+        fs : int
+            Sampling rate in Hz.
+        coords : pyfar.Coordinates
+            Source positions in spherical top-elevation convention (degrees).
+        parameters : dict
+            Noise and prior parameters for the Bayesian model.
         """
         # handle sofa input
         if isinstance(sofa, str):
             self.sofa_file = sofa
-            self.sofa_data = sofar.read_sofa(sofa, verbose = False)
+            sofa_data = sofar.read_sofa(sofa, verbose=False)
         elif isinstance(sofa, sofar.Sofa):
             self.sofa_file = None
-            self.sofa_data = sofa
+            sofa_data = sofa
         else:
             raise ValueError('sofa must be a string containing the path to a '
                              'sofa file or a sofar.Sofa object')
 
-        self.hrir = self.sofa_data.Data_IR
-        self.fs = int(self.sofa_data.Data_SamplingRate)
-        self.coords = pf.io.read_sofa(self.sofa_file)[1]
+        self.hrir = sofa_data.Data_IR
+        self.fs = int(sofa_data.Data_SamplingRate)
+        sp = sofa_data.SourcePosition
+        self.coords = pf.Coordinates(sp[:, 0], sp[:, 1], sp[:, 2],
+                                     domain='sph', convention='top_elev',
+                                     unit='deg')
 
         # noise parameters
         self.parameters = {
@@ -133,8 +153,6 @@ class BayesianListener:
             Directory for cached features. Defaults to the platform-specific
             user cache directory (e.g. ``~/.cache/bayesian_listener`` on Linux).
         """
-        assert(self.sofa_file is not None)
-
         if cache_dir is None:
             cache_dir = Path.cwd() / 'data' / 'preprocessed'
         else:

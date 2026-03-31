@@ -6,10 +6,13 @@ __author__ = """Roberto Barumerli, Fabian Brinkmann, Emanuele Zanoni, Anton Hoye
 __email__ = 'r.barumerli@imperial.ac.uk'
 __version__ = '0.1'
 __all__ = [
-    'BayesianListener'
+    'BayesianListener',
+    'AuditoryRepresentation',
+    'Barumerli2025',
     ]
 
 from .bayesian_listener import BayesianListener
+from .auditory_representation import AuditoryRepresentation, Barumerli2025
 
 from . import metrics
 from . import resample

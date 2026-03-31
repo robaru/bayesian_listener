@@ -21,7 +21,8 @@ class BayesianListener:
             When a file path is given, it is stored as ``self.sofa_file``
             and used as a cache key by ``prepare_features``.
             When a ``sofar.Sofa`` object is given, ``self.sofa_file`` is
-            ``None`` and caching is disabled.
+            ``None`` and caching is disabled, because ``sofar.Sofa`` does
+            not store the original file path.
 
         Attributes
         ----------
@@ -55,11 +56,12 @@ class BayesianListener:
                                      unit='deg')
 
         # noise parameters
+        # these values are the group average got from the 2026 paper.
         self.parameters = {
             "sigma_itd": 0.569,
-            "sigma_ild": 0.75,
-            "sigma_spectral": 4,
-            "sigma_prior": 11.5,
+            "sigma_ild": 1.0,
+            "sigma_spectral": 10.4,
+            "sigma_prior": 69.0,
             "kappa_motor": 23.31,  # ~12 deg via Bessel-based conversion
         }
 
@@ -140,18 +142,43 @@ class BayesianListener:
     # prepare
     def prepare_features(self,
                          spectral_range=[7e2, 18e3],
-                         interpolation='SH',
+                         interpolation='SHMAX',
                          interpolation_grid=None,
                          use_cache=True,
                          force_recompute=False,
                          cache_dir=None):
         """Compute spatial features and templates, with optional caching.
 
+        Extracts ITD, ILD, and spectral cues from the HRIRs via a gammatone
+        filterbank, then interpolates them onto a uniform grid to produce the
+        inference template.  Results are loaded from disk when available and
+        saved after computation (unless ``self.sofa_file`` is ``None``).
+
         Parameters
         ----------
+        spectral_range : list of float, default=[700, 18000]
+            Frequency range [low, high] in Hz used for spectral cue extraction.
+        interpolation : str, default='SHMAX'
+            Interpolation method for template generation.
+            One of ``'SH'``, ``'SHMAX'``, ``'barumerli2023'``, ``'barycentric'``.
+        interpolation_grid : pyfar.Coordinates or None, default=None
+            Target grid for interpolation.  ``None`` uses the default uniform
+            grid defined by the chosen interpolation method.
+        use_cache : bool, default=True
+            If ``True``, attempt to load features from cache before computing.
+            Caching is silently skipped when the listener was initialised
+            with a ``sofar.Sofa`` object (``self.sofa_file`` is ``None``).
+        force_recompute : bool, default=False
+            If ``True``, ignore any cached data and recompute from scratch
+            (the new result is still written to cache).
         cache_dir : str or Path, optional
-            Directory for cached features. Defaults to the platform-specific
-            user cache directory (e.g. ``~/.cache/bayesian_listener`` on Linux).
+            Directory for cached features.  Defaults to
+            ``<cwd>/data/preprocessed``.
+
+        Notes
+        -----
+        After this method returns, the following attributes are set:
+        ``itd``, ``ild``, ``spectral_cues``, ``freqs``, ``template``.
         """
         if cache_dir is None:
             cache_dir = Path.cwd() / 'data' / 'preprocessed'
@@ -170,15 +197,20 @@ class BayesianListener:
 
     def _compute_features(self,
                           spectral_range = [7e2, 18e3],
-                          interpolation='SH'):
-        """Compute ITD, ILD, and spectral cues from HRIRs.
+                          interpolation='SHMAX'):
+        """Compute ITD, ILD, and spectral cues from HRIRs and build the template.
+
+        Runs the full feature extraction pipeline via a gammatone filterbank
+        and interpolates the results onto a uniform grid.  Sets ``self.itd``,
+        ``self.ild``, ``self.spectral_cues``, ``self.freqs``, and
+        ``self.template`` in place.
 
         Parameters
         ----------
-        spectral_range : list, default=[7e2, 18e3]
-            Frequency range [low, high] in Hz for spectral analysis.
+        spectral_range : list of float, default=[700, 18000]
+            Frequency range [low, high] in Hz for spectral cue extraction.
         interpolation : str, default='SH'
-            Method for template interpolation.
+            Interpolation method passed to :meth:`interpolate`.
         """
         self.itd, self.ild, self.spectral_cues, self.freqs = \
             utils.compute_features(self.hrir, self.coords, self.fs,
@@ -189,23 +221,26 @@ class BayesianListener:
 
     def _load_or_compute_features(self,
                                   spectral_range=[7e2, 18e3],
-                                  interpolation='SH',
+                                  interpolation='SHMAX',
                                   force_recompute=False):
-        """Load features from cache or compute and save them.
+        """Load features from cache, or compute and save them.
+
+        Attempts to restore ``itd``, ``ild``, ``spectral_cues``, ``freqs``,
+        ``coords``, ``parameters``, and ``template`` from disk.  Falls back to
+        :meth:`_compute_features` on a cache miss and writes the result to
+        disk afterwards.  Caching is skipped entirely when ``self.sofa_file``
+        is ``None`` (i.e. the listener was initialised with a ``sofar.Sofa``
+        object).
 
         Parameters
         ----------
-        spectral_range : list
-            Frequency range for spectral cues [low, high] in Hz
-        interpolation : str
-            Interpolation method to use (e.g., 'SH', 'barycentric')
-        force_recompute : bool
-            If True, ignores cache and recomputes (but still saves to cache)
-
-        Returns
-        -------
-        None
-            Modifies object in place
+        spectral_range : list of float, default=[700, 18000]
+            Frequency range [low, high] in Hz for spectral cue extraction.
+        interpolation : str, default='SHMAX'
+            Interpolation method passed to :meth:`_compute_features`.
+        force_recompute : bool, default=False
+            If ``True``, ignore any cached data and recompute from scratch.
+            The new result is still written to cache.
         """
         cache_dir = self.cache_dir
 

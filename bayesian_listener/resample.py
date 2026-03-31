@@ -33,21 +33,21 @@ def build_bau_damping(N):
     return D
 
 def find_max_order(dirs,
-                   thresh=12.25,
+                   condition_threshold=12.25,
                    N_max=35,
                    regularised=True,
-                   epsilon=1e-2):
+                   regularisation_coefficient=1e-2):
     """Return the largest SH order N ≤ N_max with acceptable conditioning.
 
     Iterates from N=1 upward and returns the highest order whose
     (optionally regularised) Gram matrix ``Y^T Y`` has a condition number
-    below *thresh*.
+    below *condition_threshold*.
 
     Parameters
     ----------
     dirs : pyfar.Coordinates
         The sampling grid.
-    thresh : float
+    condition_threshold : float
         Upper bound on κ(Y^T Y).  Default 12.25 follows Bau et al. (2022),
         corresponding to κ(Y) < 3.5 (Ben-Hur et al., 2019).
     N_max : int
@@ -55,7 +55,7 @@ def find_max_order(dirs,
     regularised : bool
         If True, apply Tikhonov regularisation with Bau damping matrix
         before evaluating the condition number.
-    epsilon : float
+    regularisation_coefficient : float
         Regularisation weight (Bau et al., 2022, use 10e-2 = 0.1;
         current default is 1e-2 — see issue #37).
 
@@ -63,7 +63,7 @@ def find_max_order(dirs,
     -------
     N : int
         Largest admissible SH order (1-based). Returns 1 if no order
-        satisfies the threshold.
+        satisfies the condition_threshold.
     """
     Y = sy.spherical.spherical_harmonic_basis_real(N_max, dirs)
 
@@ -74,11 +74,11 @@ def find_max_order(dirs,
         D_bau = build_bau_damping(N)
 
         if regularised:
-            YY = YtY + epsilon * D_bau
+            YY = YtY + regularisation_coefficient * D_bau
         else:
             YY = YtY
 
-        if np.linalg.cond(YY) > thresh:
+        if np.linalg.cond(YY) > condition_threshold:
                 return N - 1
     return N_max
 
@@ -146,7 +146,7 @@ def complement_sampling(coordinates):
     return complemented, mask
 
 # method from Fabian in test_resampling
-def resample_two_step(cues, coordinates, template, second_step):
+def resample_two_step(cues, coordinates, template, second_step, **kwargs):
     """
     Resample localization cues.
 
@@ -162,6 +162,14 @@ def resample_two_step(cues, coordinates, template, second_step):
         uses spherical n-design of 64th degree.
     second_step : string
         'SH' or 'Barycentric' (case insensitive)
+    **kwargs
+        Optional parameters forwarded to :func:`find_max_order` and used
+        for Tikhonov regularisation:
+
+        regularisation_coefficient : float, default=1e-2
+            Regularisation weight for the Bau damping matrix.
+        condition_threshold : float, default=12.25
+            Condition number condition_thresholdold for :func:`find_max_order`.
 
     Returns
     -------
@@ -171,6 +179,8 @@ def resample_two_step(cues, coordinates, template, second_step):
     template_coords : pyfar.Coordinates
         Output coordinates of resampled cues.
     """
+    regularisation_coefficient = kwargs.get('regularisation_coefficient', 1e-2)
+    condition_threshold = kwargs.get('condition_threshold', 12.25)
 
     # check input format
     if not isinstance(cues, (list, tuple)):
@@ -203,7 +213,7 @@ def resample_two_step(cues, coordinates, template, second_step):
     # perform first interpolation step only if grid could be complemented
     if np.any(mask):
         # low order SH transform
-        n_max = find_max_order(coordinates, N_max=5)
+        n_max = find_max_order(coordinates, N_max=5, condition_threshold=condition_threshold)
         print("Low order {}".format(n_max))
         Y = sy.spherical.spherical_harmonic_basis_real(n_max, coordinates)
         Y_inv = np.linalg.pinv(Y)
@@ -231,16 +241,15 @@ def resample_two_step(cues, coordinates, template, second_step):
 
     elif second_step.lower() == 'sh':
         # high(er) order SH transform
-        n_max = find_max_order(coordinates_complemented)
+        n_max = find_max_order(coordinates_complemented, condition_threshold=condition_threshold)
         print("High order {}".format(n_max))
         Y = sy.spherical.spherical_harmonic_basis_real(
             n_max, coordinates_complemented)
 
         # Apply Tikhonov regularization with Bau damping
-        epsilon = 1e-2
         D_bau = build_bau_damping(n_max)
         YtY = Y.T @ Y
-        Y_inv = np.linalg.solve(YtY + epsilon * D_bau, Y.T)
+        Y_inv = np.linalg.solve(YtY + regularisation_coefficient * D_bau, Y.T)
         cues = [Y_inv @ c for c in cues]
 
         # high(er) order inverse SH transform to template grid
@@ -256,10 +265,9 @@ def resample_two_step(cues, coordinates, template, second_step):
             n_max, coordinates_complemented)
 
         # Apply Tikhonov regularization with Bau damping
-        epsilon = 1e-2
         D_bau = build_bau_damping(n_max)
         YtY = Y.T @ Y
-        Y_inv = np.linalg.solve(YtY + epsilon * D_bau, Y.T)
+        Y_inv = np.linalg.solve(YtY + regularisation_coefficient * D_bau, Y.T)
         cues = [Y_inv @ c for c in cues]
 
         # high(er) order inverse SH transform to template grid
@@ -388,7 +396,7 @@ def resample_barumerli2023(values,
 
     return cues_out, template
 
-def resample(cues, coordinates, template=None, method='SH'):
+def resample(cues, coordinates, template=None, method='SH', **kwargs):
     """
     Unified resample interface that handles both single and multiple cues.
 
@@ -400,12 +408,16 @@ def resample(cues, coordinates, template=None, method='SH'):
         where first dimension matches.
     coordinates : pf.Coordinates
         Source coordinates
-    termplate : pyfar.Coordinates or `None`, optional
+    template : pyfar.Coordinates or `None`, optional
         Coordinates to which the cues are interpolated to. If `None` (default),
         uses 64th degree spherical n-design for methods 'SH', 'barycentric', and
         'barumerli2023'.
     method : str
-        Resampling method: 'SH', 'barycentric', or 'barumerli2023'
+        Resampling method: 'SH', 'SHMAX', 'barycentric', or 'barumerli2023'
+    **kwargs
+        Forwarded to :func:`resample_two_step` for 'SH', 'SHMAX', and
+        'barycentric' methods.  See :func:`resample_two_step` for details
+        (``regularisation_coefficient``, ``condition_threshold``).
 
     Returns
     -------
@@ -418,13 +430,14 @@ def resample(cues, coordinates, template=None, method='SH'):
     """
     if method.lower() == 'barycentric':
         result, template_coords = resample_two_step(cues, coordinates,
-                                                    template, 'barycentric')
+                                                    template, 'barycentric',
+                                                    **kwargs)
     elif method.lower() == 'sh':
         result, template_coords = resample_two_step(cues, coordinates,
-                                                    template, 'sh')
+                                                    template, 'sh', **kwargs)
     elif method.lower() == 'shmax':
         result, template_coords = resample_two_step(cues, coordinates,
-                                                    template, 'shmax')
+                                                    template, 'shmax', **kwargs)
     elif method.lower() == 'barumerli2023':
         result, template_coords = resample_barumerli2023(cues,
                                                          coordinates,

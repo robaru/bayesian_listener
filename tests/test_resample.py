@@ -11,8 +11,8 @@ def make_grid():
     az_grid, el_grid = np.meshgrid(az, el)
     az_flat = az_grid.ravel()
     el_flat = el_grid.ravel()
-    coords = pf.Coordinates(az_flat, el_flat, np.ones(len(az_flat)),
-                            domain='sph', convention='top_elev')
+    coords = pf.Coordinates.from_spherical_elevation(
+        az_flat, el_flat, np.ones(len(az_flat)))
     cues = np.random.default_rng(0).standard_normal((coords.csize, 10))
     return cues, coords
 
@@ -69,9 +69,8 @@ def test_vbap_interpolate_norm2():
     az = np.deg2rad(np.arange(0, 360, 30))
     el = np.deg2rad(np.array([-60, -30, 0, 30, 60]))
     az_grid, el_grid = np.meshgrid(az, el)
-    coords = pf.Coordinates(az_grid.ravel(), el_grid.ravel(),
-                            np.ones(az_grid.size),
-                            domain='sph', convention='top_elev')
+    coords = pf.Coordinates.from_spherical_elevation(
+        az_grid.ravel(), el_grid.ravel(), np.ones(az_grid.size))
     grid = coords.cartesian
     rng = np.random.default_rng(7)
     src = rng.standard_normal((5, 3))
@@ -97,9 +96,8 @@ def test_vbap_interpolate_matches_spaudiopy():
     az = np.deg2rad(np.arange(0, 360, 30))
     el = np.deg2rad(np.array([-60, -30, 0, 30, 60]))
     az_grid, el_grid = np.meshgrid(az, el)
-    coords = pf.Coordinates(az_grid.ravel(), el_grid.ravel(),
-                            np.ones(az_grid.size),
-                            domain='sph', convention='top_elev')
+    coords = pf.Coordinates.from_spherical_elevation(
+        az_grid.ravel(), el_grid.ravel(), np.ones(az_grid.size))
     grid = coords.cartesian
 
     rng = np.random.default_rng(42)

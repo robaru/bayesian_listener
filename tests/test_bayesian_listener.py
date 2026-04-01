@@ -172,6 +172,9 @@ def test_load_cached_data():
     repo_root = Path(__file__).parent.parent
     cache_dir = repo_root / 'data' / 'preprocessed'
 
+    if not cache_dir.exists() or not any(cache_dir.iterdir()):
+        pytest.skip('No pre-built cache found — skipping cache load test.')
+
     loaded = load_from_cache(
         cache_dir, sofa_file,
         attributes_to_restore=['target', 'template'],

@@ -118,6 +118,8 @@ tests/private/
 
 # Downloaded test data (large SOFA files)
 data
+# But track package data files shipped with the library
+!bayesian_listener/data/
 
 # Claude Code
 .claude

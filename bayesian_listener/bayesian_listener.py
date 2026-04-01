@@ -58,9 +58,8 @@ class BayesianListener:
         self.hrir = sofa_data.Data_IR
         self.fs = int(sofa_data.Data_SamplingRate)
         sp = sofa_data.SourcePosition
-        self.coords = pf.Coordinates(sp[:, 0], sp[:, 1], sp[:, 2],
-                                     domain='sph', convention='top_elev',
-                                     unit='deg')
+        self.coords = pf.Coordinates.from_spherical_elevation(
+            np.deg2rad(sp[:, 0]), np.deg2rad(sp[:, 1]), sp[:, 2])
 
         # noise and prior parameters (group average, Barumerli et al. 2025)
         self.parameters = {

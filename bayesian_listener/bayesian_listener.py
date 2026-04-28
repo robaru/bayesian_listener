@@ -11,7 +11,31 @@ from bayesian_listener.auditory_representation import (
 from pathlib import Path
 
 class BayesianListener:
-    """Bayesian model of human sound localisation using HRTF-derived cues."""
+    """Bayesian model of human static sound localisation from HRTFs.
+
+    Implements the generative pipeline of [barumerli2023]_, validated and
+    extended in [barumerli2026]_:  noisy spatial features (ITD, ILD, monaural
+    spectra) are extracted from a binaural stimulus, compared against
+    direction-labelled HRTF templates, combined with an elevation prior, and
+    finally perturbed by motor noise to yield a directional response.
+
+    See :ref:`background` for the full equations and parameter definitions.
+
+    References
+    ----------
+    .. [barumerli2023]_  Eqs. 1–7 (model formulation).
+    .. [barumerli2026]_  Eqs. 8–14 (likelihood, fitting, BIC).
+
+    Examples
+    --------
+    Load an HRTF, prepare features, and infer a single direction:
+
+    >>> from bayesian_listener import BayesianListener   # doctest: +SKIP
+    >>> bl = BayesianListener('subject01.sofa')          # doctest: +SKIP
+    >>> bl.prepare_features(interpolation='SHMAX')       # doctest: +SKIP
+    >>> posterior = bl.infer(repetitions=50, seed=0)     # doctest: +SKIP
+    >>> response  = bl.estimate(posterior, seed=0)       # doctest: +SKIP
+    """
 
     def __init__(self, sofa,
                  sigma_itd=0.569,
@@ -19,30 +43,64 @@ class BayesianListener:
                  sigma_spectral=10.4,
                  sigma_prior=69.0,
                  kappa_motor=23.31):
-        """Initialize listener from SOFA file or in-memory Sofa object.
+        r"""Initialise the listener from a SOFA file or an in-memory Sofa object.
 
         Parameters
         ----------
-        sofa : str or sofar.Sofa
-            Path to a SOFA file or a pre-loaded ``sofar.Sofa`` object.
-            When a file path is given, it is stored as ``self.sofa_file``
-            and used as a cache key by ``prepare_features``.
-            When a ``sofar.Sofa`` object is given, ``self.sofa_file`` is
-            ``None`` and caching is disabled, because ``sofar.Sofa`` does
-            not store the original file path.
+        sofa : str or :class:`sofar.Sofa`
+            Path to a SOFA file or a pre-loaded :class:`sofar.Sofa` object.
+            When a file path is given, it is stored as ``self.sofa_file`` and
+            used as a cache key by :meth:`prepare_features`.  When a
+            :class:`sofar.Sofa` object is given, ``self.sofa_file`` is
+            ``None`` and caching is disabled.
+        sigma_itd : float, default=0.569
+            ITD perceptual noise :math:`\sigma_{\mathrm{itd}}` (dimensionless,
+            applied to the warped ITD feature of Eq. 1, [barumerli2023]_).
+            Fixed at the literature value during the two-stage fit.
+        sigma_ild : float, default=1.0
+            ILD perceptual noise :math:`\sigma_{\mathrm{ild}}` in dB.
+            Fixed at the literature value during the two-stage fit.
+        sigma_spectral : float, default=10.4
+            Monaural spectral noise :math:`\sigma_{\mathrm{mon}}` in dB
+            (paper symbol ``sigma_mon``, Eq. 2 of [barumerli2023]_).  Fitted
+            in stage 2 of the procedure described in :func:`~bayesian_listener.fitting.fit_listener`.
+        sigma_prior : float, default=69.0
+            Elevation prior width :math:`\sigma_{\mathrm{prior}}` in degrees
+            (Eq. 5 of [barumerli2023]_).  Fitted in stage 2.  Group-average
+            value from [barumerli2026]_, Table 1.
+        kappa_motor : float, default=23.31
+            Motor-noise concentration :math:`\kappa_m` of the von
+            Mises–Fisher response distribution (Eq. 7 of [barumerli2023]_).
+            Convert to a circular standard deviation in degrees with
+            :func:`~bayesian_listener.fitting.kappa_to_sigma`.
 
         Attributes
         ----------
         sofa_file : str or None
             Path to the SOFA file, or ``None`` if a Sofa object was passed.
-        hrir : ndarray
-            Head-related impulse responses, shape (n_directions, 2, n_samples).
+        hrir : :class:`numpy.ndarray`
+            Head-related impulse responses, shape ``(n_directions, 2, n_samples)``.
         fs : int
             Sampling rate in Hz.
-        coords : pyfar.Coordinates
-            Source positions in spherical top-elevation convention (degrees).
+        coords : :class:`pyfar.Coordinates`
+            Source positions, one per HRIR row.
         parameters : dict
-            Noise and prior parameters for the Bayesian model.
+            Mapping with keys ``sigma_itd``, ``sigma_ild``, ``sigma_spectral``,
+            ``sigma_prior``, ``kappa_motor``.
+
+        Raises
+        ------
+        ValueError
+            If ``sofa`` is neither a string path nor a :class:`sofar.Sofa`
+            instance.
+
+        Examples
+        --------
+        >>> bl = BayesianListener('subject01.sofa',
+        ...                       sigma_spectral=8.0,
+        ...                       sigma_prior=55.0)        # doctest: +SKIP
+        >>> bl.fs                                          # doctest: +SKIP
+        48000
         """
         # handle sofa input
         if isinstance(sofa, str):
@@ -75,6 +133,12 @@ class BayesianListener:
 
     @property
     def parameters(self):
+        """Noise and prior parameters as a dict.
+
+        Required keys: ``sigma_itd``, ``sigma_ild``, ``sigma_spectral``,
+        ``sigma_prior``, ``kappa_motor``.  The setter raises
+        :class:`ValueError` if any key is missing.
+        """
         return self._parameters
 
     @parameters.setter
@@ -95,6 +159,7 @@ class BayesianListener:
 
     @property
     def sigma_itd(self):
+        r""":math:`\sigma_{\mathrm{itd}}`, the warped-ITD noise (dimensionless)."""
         return self.parameters['sigma_itd']
 
     @sigma_itd.setter
@@ -103,6 +168,7 @@ class BayesianListener:
 
     @property
     def sigma_ild(self):
+        r""":math:`\sigma_{\mathrm{ild}}`, the ILD noise in dB."""
         return self.parameters['sigma_ild']
 
     @sigma_ild.setter
@@ -111,6 +177,7 @@ class BayesianListener:
 
     @property
     def sigma_spectral(self):
+        r""":math:`\sigma_{\mathrm{mon}}`, the monaural spectral noise in dB."""
         return self.parameters['sigma_spectral']
 
     @sigma_spectral.setter
@@ -119,6 +186,7 @@ class BayesianListener:
 
     @property
     def sigma_prior(self):
+        r""":math:`\sigma_{\mathrm{prior}}`, the elevation prior width in degrees."""
         return self.parameters['sigma_prior']
 
     @sigma_prior.setter
@@ -127,6 +195,7 @@ class BayesianListener:
 
     @property
     def kappa_motor(self):
+        r""":math:`\kappa_m`, the von Mises–Fisher motor-noise concentration."""
         return self.parameters['kappa_motor']
 
     @kappa_motor.setter
@@ -135,7 +204,12 @@ class BayesianListener:
 
     @property
     def sigma_motor(self):
-        """Motor noise in degrees (converted from ``kappa_motor``)."""
+        r"""Motor-noise circular standard deviation :math:`\sigma_m` in degrees.
+
+        Computed from :attr:`kappa_motor` via the Bessel-ratio identity
+        :math:`R = I_1(\kappa_m)/I_0(\kappa_m) = \exp(-\sigma_m^2/2)`.
+        See :func:`~bayesian_listener.fitting.kappa_to_sigma`.
+        """
         from bayesian_listener.fitting import kappa_to_sigma
         return kappa_to_sigma(self.parameters['kappa_motor'])
 
@@ -146,7 +220,12 @@ class BayesianListener:
 
     @property
     def target(self):
-        """AuditoryRepresentation or None — what the listener is hearing."""
+        """Auditory representation of the stimulus, or ``None`` if not computed.
+
+        Set by :meth:`compute_target`.  Assigning a value validates that it is
+        an :class:`~bayesian_listener.auditory_representation.AuditoryRepresentation`
+        instance (or ``None``); otherwise raises :class:`TypeError`.
+        """
         return self._target
 
     @target.setter
@@ -157,7 +236,12 @@ class BayesianListener:
 
     @property
     def template(self):
-        """AuditoryRepresentation or None — the listener's internal model."""
+        """Listener's internal template, or ``None`` if not computed.
+
+        Set by :meth:`compute_template`.  Assigning a value validates that it is
+        an :class:`~bayesian_listener.auditory_representation.AuditoryRepresentation`
+        instance (or ``None``); otherwise raises :class:`TypeError`.
+        """
         return self._template
 
     @template.setter
@@ -167,25 +251,32 @@ class BayesianListener:
         self._template = value
 
     def _interpolate(self, ar, interpolation='SHMAX', interpolation_grid=None):
-        """Resample an AuditoryRepresentation onto a uniform grid.
+        """Resample an :class:`~bayesian_listener.auditory_representation.AuditoryRepresentation` onto a uniform grid.
 
         Parameters
         ----------
         ar : AuditoryRepresentation
             Source representation to interpolate.
-        interpolation : {'SH', 'SHmax', 'barycentric', 'barumerli2023'}, default='SHMAX'
+        interpolation : {'SH', 'SHMAX', 'barycentric', 'barumerli2023'}, default='SHMAX'
             Interpolation method:
-            - 'SH': Spherical harmonics interpolation with SH truncation.
-            - 'SHMAX': Spherical harmonics with high SH order.
-            - 'barycentric': Barycentric interpolation on triangulated mesh.
-            - 'barumerli2023': Method from Barumerli et al. (2023).
-        interpolation_grid : pyfar.Coordinates or None
-            Target grid; ``None`` uses the method's default uniform grid.
+
+            - ``'SH'`` — regularised spherical-harmonic interpolation with
+              the maximum stable order chosen by
+              :func:`~bayesian_listener.resample.find_max_order`.
+            - ``'SHMAX'`` — spherical-harmonic interpolation at fixed order 44
+              with Tikhonov regularisation.
+            - ``'barycentric'`` — VBAP/barycentric weights on the convex hull
+              of the sampling grid.
+            - ``'barumerli2023'`` — original method of [barumerli2023]_,
+              order-15 SH; truncated below the lowest measured elevation.
+        interpolation_grid : :class:`pyfar.Coordinates` or None, default=None
+            Target grid.  If ``None``, uses a 64th-degree spherical t-design
+            (2,112 quasi-uniform points).
 
         Returns
         -------
         AuditoryRepresentation
-            Same subclass as ``ar``, resampled onto the uniform grid.
+            Same subclass as ``ar``, resampled onto the target grid.
         """
         cues_list = [
             ar.itd,
@@ -206,14 +297,35 @@ class BayesianListener:
         )
 
     def compute_target(self, convention='barumerli2025', spectral_range=None):
-        """Compute raw auditory representation from ``self.hrir``.
+        """Compute the auditory representation of the stimulus from ``self.hrir``.
 
-        Sets ``self.target``.  No interpolation is performed.
+        Sets :attr:`target` to a fresh
+        :class:`~bayesian_listener.auditory_representation.AuditoryRepresentation`
+        instance.  No interpolation is performed; rows of ``target.coords``
+        match the measured HRTF directions one-to-one.
 
         Parameters
         ----------
         convention : str, default='barumerli2025'
-        spectral_range : list of float or None, default=[700, 18000]
+            Key into ``bayesian_listener.auditory_representation.CONVENTIONS``
+            selecting the representation subclass.  Currently
+            ``'barumerli2025'`` (ITD + ILD + spectral amplitudes) is the only
+            implemented convention; ``'barumerli2023pge'`` is a stub.
+        spectral_range : list of float or None, default=None
+            ``[low_Hz, high_Hz]`` limits of the gammatone filterbank used for
+            the monaural cues.  ``None`` selects ``[700.0, 18000.0]``.
+
+        Raises
+        ------
+        ValueError
+            If ``convention`` is not a registered convention key.
+
+        Examples
+        --------
+        >>> bl = BayesianListener('subject01.sofa')           # doctest: +SKIP
+        >>> bl.compute_target(spectral_range=[500, 16000])    # doctest: +SKIP
+        >>> bl.target.features.shape                          # doctest: +SKIP
+        (793, 58)
         """
         if spectral_range is None:
             spectral_range = [7e2, 18e3]
@@ -232,14 +344,33 @@ class BayesianListener:
         )
 
     def compute_template(self, interpolation='SHMAX', interpolation_grid=None):
-        """Interpolate ``self.target`` onto a uniform grid.
+        """Interpolate :attr:`target` onto a quasi-uniform grid and store it as :attr:`template`.
 
-        Sets ``self.template``.  Must call ``compute_target()`` first.
+        Must be called after :meth:`compute_target`.  See :ref:`background_interpolation`
+        for the comparison of the four interpolation methods on dense
+        measurement grids.
 
         Parameters
         ----------
-        interpolation : str, default='SHMAX'
-        interpolation_grid : pyfar.Coordinates or None
+        interpolation : {'SH', 'SHMAX', 'barycentric', 'barumerli2023'}, default='SHMAX'
+            Interpolation method; see :meth:`compute_template` for details
+            of each.
+        interpolation_grid : :class:`pyfar.Coordinates` or None, default=None
+            Target directions.  ``None`` selects a 64th-degree spherical
+            t-design (2,112 directions, 4° average spacing).
+
+        Raises
+        ------
+        ValueError
+            If :attr:`target` is ``None`` (call :meth:`compute_target` first).
+
+        Examples
+        --------
+        >>> bl = BayesianListener('subject01.sofa')                  # doctest: +SKIP
+        >>> bl.compute_target()                                      # doctest: +SKIP
+        >>> bl.compute_template(interpolation='SHMAX')               # doctest: +SKIP
+        >>> bl.template.features.shape[0]                            # doctest: +SKIP
+        2112
         """
         if self.target is None:
             raise ValueError(
@@ -255,21 +386,44 @@ class BayesianListener:
                          force_recompute=False,
                          cache_dir=None,
                          compute_template=True):
-        """Compute features and optionally the template, with caching.
+        """Compute target and (optionally) template features, with on-disk caching.
 
-        Calls :meth:`compute_target` then :meth:`compute_template`.
-        Set ``compute_template=False`` to skip interpolation (non-individual
-        localisation, where only target features are needed).
+        Convenience wrapper that calls :meth:`compute_target` and then
+        :meth:`compute_template`.  When the SOFA file path is known and
+        ``use_cache=True``, results are pickled under ``cache_dir`` and reused
+        on subsequent calls keyed by file hash and interpolation method.
 
         Parameters
         ----------
-        spectral_range : list of float or None, default=[700, 18000]
-        interpolation : str, default='SHMAX'
-        interpolation_grid : pyfar.Coordinates or None
+        spectral_range : list of float or None, default=None
+            ``[low_Hz, high_Hz]`` for the monaural filterbank.  ``None``
+            selects ``[700.0, 18000.0]``.
+        interpolation : {'SH', 'SHMAX', 'barycentric', 'barumerli2023'}, default='SHMAX'
+            Interpolation method forwarded to :meth:`compute_template`.
+        interpolation_grid : :class:`pyfar.Coordinates` or None, default=None
+            Target directions; ``None`` selects a 64th-degree spherical
+            t-design.
         use_cache : bool, default=True
+            If ``True``, attempt to load previously computed features from
+            ``cache_dir``.
         force_recompute : bool, default=False
-        cache_dir : str or Path or None
+            If ``True``, recompute even when a cache hit is found.
+        cache_dir : str or :class:`pathlib.Path` or None, default=None
+            Directory for the pickle cache.  ``None`` selects
+            ``Path.cwd() / 'data' / 'preprocessed'``.
         compute_template : bool, default=True
+            If ``False``, only :attr:`target` is populated; :attr:`template`
+            is left as ``None`` (used in non-individual localisation tasks).
+
+        Returns
+        -------
+        None
+            Modifies :attr:`target` and :attr:`template` in place.
+
+        Examples
+        --------
+        >>> bl = BayesianListener('subject01.sofa')                  # doctest: +SKIP
+        >>> bl.prepare_features(interpolation='SHMAX', use_cache=False)  # doctest: +SKIP
         """
         if spectral_range is None:
             spectral_range = [7e2, 18e3]
@@ -309,20 +463,58 @@ class BayesianListener:
               prior='horizontal',
               store_posterior=False,
               seed=None):
-        """Perform Bayesian inference to estimate sound source direction.
+        r"""Run Monte Carlo Bayesian inference of source direction.
+
+        For each target direction, draw ``repetitions`` noisy feature samples
+        :math:`\mathbf{t}` from
+        :math:`\mathcal{N}(\mathbf{s}(\boldsymbol{\varphi}), \boldsymbol{\Sigma})`,
+        then compute the log-posterior
+        :math:`p(\boldsymbol{\varphi} \mid \mathbf{t}) \propto
+        p(\mathbf{t} \mid \boldsymbol{\varphi})\, p(\boldsymbol{\varphi})`
+        (Eq. 3 of [barumerli2023]_) over all template directions.
 
         Parameters
         ----------
         repetitions : int, default=50
-        prior : {'uniform', 'horizontal'} or ndarray, default='horizontal'
+            Number of Monte Carlo trials per target direction.
+        prior : {'uniform', 'horizontal'} or :class:`numpy.ndarray`, default='horizontal'
+            Direction prior :math:`p(\boldsymbol{\varphi})`:
+
+            - ``'uniform'`` — flat prior over template directions.
+            - ``'horizontal'`` — Gaussian prior over elevation with width
+              :attr:`sigma_prior` (Eq. 5 of [barumerli2023]_).
+            - array of shape ``(n_templates,)`` — custom unnormalised
+              prior; normalised internally.
         store_posterior : bool, default=False
-        seed : int or None
+            If ``True``, return the full normalised log-posterior over
+            templates.  If ``False``, return only argmax indices (memory-light).
+        seed : int or None, default=None
+            Seed for :func:`numpy.random.default_rng`.  ``None`` yields a
+            non-reproducible run.
 
         Returns
         -------
-        ndarray
-            MAP indices ``(targets × repetitions)`` or log-posteriors
-            ``(targets × repetitions × templates)`` if ``store_posterior=True``.
+        :class:`numpy.ndarray`
+            If ``store_posterior=True``: log-posterior of shape
+            ``(n_targets, repetitions, n_templates)`` (rows sum to 1 in
+            linear domain).  Otherwise: integer template indices of shape
+            ``(n_targets, repetitions)``.
+
+        Raises
+        ------
+        ValueError
+            If :attr:`target` or :attr:`template` is ``None``, if their
+            conventions differ, if ``prior`` is an array of the wrong shape,
+            or if ``prior`` is an unknown string.
+        TypeError
+            If ``prior`` is neither a string nor a :class:`numpy.ndarray`.
+
+        Examples
+        --------
+        >>> bl.compute_target(); bl.compute_template()       # doctest: +SKIP
+        >>> idx = bl.infer(repetitions=200, seed=0)          # doctest: +SKIP
+        >>> idx.shape                                        # doctest: +SKIP
+        (793, 200)
         """
         if self.target is None:
             raise ValueError(
@@ -437,32 +629,54 @@ class BayesianListener:
 
 
     def estimate(self, posterior, kappa_motor=None, seed=None):
-        """
-        Estimate directions from posterior distribution.
+        r"""Convert posterior(s) into pointing responses with motor noise applied.
+
+        Selects the MAP template direction for each (trial, repetition) pair
+        and perturbs it with isotropic motor noise drawn from
+        :math:`\mathrm{vMF}(\mathbf{0}, \kappa_m)` (Eq. 7 of [barumerli2023]_).
 
         Parameters
         ----------
-        posterior : ndarray
-            Either full posterior (trials :math:`\times` repetitions :math:`\times` templates)
-            OR argmax indices (trials :math:`\times` repetitions)
-            if computed with ``store_posterior=False`` (see :py:meth:`~infer` for details)
-        kappa_motor : float or None, optional
-            Motor noise concentration. The concentration parametrises a von Mises - Fisher distribution
-            and can be obtained from a standard deviation in degrees froom fitting.sigma_to_kappa()
-            If None, uses self.parameters['kappa_motor'].
-            If False or 0, motor noise is disabled.
-        seed : int or None, optional
-            Fixed random seed for reproducibility.
+        posterior : :class:`numpy.ndarray`
+            Output of :meth:`infer`.  Either:
+
+            - log-posteriors of shape ``(n_targets, repetitions, n_templates)``
+              (when :meth:`infer` was called with ``store_posterior=True``), or
+            - argmax indices of shape ``(n_targets, repetitions)``.
+        kappa_motor : float, ``False``, ``0`` or None, default=None
+            von Mises–Fisher concentration for the motor-noise step.
+
+            - ``None`` — use ``self.parameters['kappa_motor']``.
+            - ``False`` or ``0`` — disable motor noise (return raw MAP
+              directions).
+            - any positive float — explicit concentration.  Convert from a
+              circular SD with
+              :func:`~bayesian_listener.fitting.sigma_to_kappa`.
+        seed : int or None, default=None
+            Seed for the motor-noise RNG.
 
         Returns
         -------
-        estimations : ndarray
-            Estimated directions in Cartesian coordinates
-            (trials :math:`\times` repetitions :math:`\times` 3)
+        :class:`pyfar.Coordinates`
+            Pointing responses with cartesian array shape
+            ``(n_targets, repetitions, 3)``.
+
+        Raises
+        ------
+        ValueError
+            If ``posterior`` has zero rows.
+
+        Examples
+        --------
+        >>> idx       = bl.infer(repetitions=50, seed=0)        # doctest: +SKIP
+        >>> responses = bl.estimate(idx, seed=0)                # doctest: +SKIP
+        >>> responses.cartesian.shape                           # doctest: +SKIP
+        (793, 50, 3)
         """
         repetitions = np.size(posterior, 1)
         trials = np.size(posterior, 0)
-        assert(trials > 0)
+        if trials <= 0:
+            raise ValueError('posterior must have at least one trial.')
 
         coords_temp = self.template.coords.cartesian
 
@@ -496,18 +710,28 @@ class BayesianListener:
 
         Parameters
         ----------
-        title : str, optional
-            Additional title text.
-        fig, ax : matplotlib objects, optional
-            Existing figure/axes to plot on.
-        clim : tuple, optional
-            Color limits (min, max) for intensity.
-        elev_min : float, optional
-            Minimum elevation to display.
+        title : str, default=''
+            String appended to the default subplot title.
+        fig : :class:`matplotlib.figure.Figure` or None, default=None
+            Existing figure to plot on.  ``None`` creates a fresh figure.
+        ax : :class:`matplotlib.axes.Axes` or None, default=None
+            Existing axes to plot on.  ``None`` creates fresh axes inside ``fig``.
+        clim : tuple of float or None, default=None
+            ``(vmin, vmax)`` for the colour scale in dB.  ``None`` uses
+            ``(amps.min(), amps.max())``.
+        elev_min : float or None, default=None
+            Drop directions with elevation below this threshold (degrees).
+            ``None`` keeps all directions on the median plane.
 
         Returns
         -------
-        fig, ax : matplotlib objects
+        fig : :class:`matplotlib.figure.Figure`
+        ax : :class:`matplotlib.axes.Axes`
+
+        Raises
+        ------
+        ValueError
+            If :attr:`target` is ``None``.
         """
         if self.target is None:
             raise ValueError(
@@ -559,7 +783,22 @@ class BayesianListener:
         return fig, ax
 
     def plot_post(self, posterior, estimations):
-        """Plot posterior distribution with estimated direction overlay."""
+        """Plot the posterior distribution on the sphere with response overlay.
+
+        Parameters
+        ----------
+        posterior : :class:`numpy.ndarray`
+            Log-posterior of shape ``(n_templates,)``, e.g. one slice of
+            :meth:`infer` output with ``store_posterior=True``.
+        estimations : :class:`pyfar.Coordinates` or None
+            Optional pointing-response coordinate (single direction).
+            If ``None``, only the posterior is drawn.
+
+        Returns
+        -------
+        ax : :class:`matplotlib.axes.Axes`
+            3-D axes with the posterior scatter and overlay arrows.
+        """
         amps = posterior.squeeze()
 
         ax = self.template.coords.show(

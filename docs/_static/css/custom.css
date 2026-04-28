@@ -1,28 +1,19 @@
-html {
-    --pst-icon-external-link: "";
-}
-
-/* css style for icons on package index pages */
-.icon-style {
-    color: #126CB0;
-    font-size: 5.2rem;
-    margin: 1rem;
-}
-
+/* Transparent image backgrounds — keeps HRTF plots readable in both modes. */
 img {
     background-color: transparent !important;
 }
 
-/* Custom background class - copy of sd-bg-light pattern from sphinx-design */
-.bg-logo-card {
-    background-color: var(--bg-color-logo-card) !important;
+/* Icon styling for the landing-page card grid (Phase 2 will replace raw-HTML icons). */
+.icon-style {
+    font-size: 5.2rem;
+    margin: 1rem;
+    color: var(--color-brand-primary);
 }
 
-html[data-theme="light"] {
-    --bg-color-logo-card: #ffffff; /* Toned down gray-white at 80% brightness */
+/* Right-hand "On this page" TOC: bump from Furo's default ~13px to 14px and
+   relax line-height so wrapped entries breathe.  Left sidebar (.sidebar-tree)
+   is intentionally not affected. */
+.toc-tree li, .toc-tree a {
+    font-size: 0.875rem;
+    line-height: 1.45;
 }
-
-html[data-theme="dark"] {
-    --bg-color-logo-card: #d9d9d9; /* 85% brightness white (255 * 0.85 = 217 = D9) */
-}
-

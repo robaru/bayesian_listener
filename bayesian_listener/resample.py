@@ -1,6 +1,17 @@
-"""
-This module contains functions to spatially resample ITD, ILD and spectral
-cues.
+"""Spatial resampling of ITD, ILD, and spectral cues onto a quasi-uniform grid.
+
+Four interpolation methods are exposed via :func:`resample`:
+
+- ``'SH'``      — regularised spherical-harmonic (SH) interpolation at
+  the maximum stable order for the input grid.
+- ``'SHMAX'``   — SH interpolation at fixed order 44 with Tikhonov
+  regularisation (Bau damping, [bau2022]_).
+- ``'barycentric'`` — VBAP weights on the convex hull of the sampling grid
+  ([pulkki1997]_).
+- ``'barumerli2023'`` — order-15 SH interpolation from [barumerli2023]_;
+  retained for backward compatibility.
+
+Methods are compared on the SONICOM dataset in [barumerli2026]_, §2.5.
 """
 import numpy as np
 import spharpy as sy
@@ -15,15 +26,46 @@ from bayesian_listener import utils
 
 # helpers
 def build_Y(dirs, N):
-    """
-    Build the (len(dirs) × (N+1)^2) matrix of real SH basis functions
-    evaluated at each direction in `dirs`.
+    r"""Build the matrix of real spherical-harmonic basis functions at each direction.
+
+    Parameters
+    ----------
+    dirs : :class:`numpy.ndarray`
+        Direction array of shape ``(n_dirs, 2)`` containing
+        ``(azimuth, elevation)`` in **radians**.
+    N : int
+        SH order; the basis has :math:`(N+1)^2` columns.
+
+    Returns
+    -------
+    :class:`numpy.ndarray`
+        Real SH basis :math:`\mathbf{Y}` of shape
+        ``(n_dirs, (N + 1) ** 2)``.
     """
     Y = sy.sph.sh_matrix(N, dirs[:, 0], dirs[:, 1], sh_type='real')
     return Y
 
 def build_bau_damping(N):
-    """Bau et al. damping: D_ii = 1 + n(n+1)."""
+    r"""Bau et al. damping matrix for Tikhonov-regularised SH inversion.
+
+    Builds the diagonal damping
+    :math:`D_{ii} = 1 + n(n+1)` indexed in SH order :math:`n` (each :math:`n`
+    repeats :math:`2n+1` times).
+
+    Parameters
+    ----------
+    N : int
+        Maximum SH order.
+
+    Returns
+    -------
+    :class:`numpy.ndarray`
+        Diagonal damping matrix of shape ``((N + 1) ** 2, (N + 1) ** 2)``.
+
+    References
+    ----------
+    [bau2022]_.
+    """
     num_coeffs = (N + 1) ** 2
     D = np.zeros((num_coeffs, num_coeffs))
     idx = 0
@@ -38,33 +80,35 @@ def find_max_order(dirs,
                    N_max=35,
                    regularised=True,
                    regularisation_coefficient=1e-2):
-    """Return the largest SH order N ≤ N_max with acceptable conditioning.
+    r"""Return the largest SH order :math:`N \le N_{\max}` with stable conditioning.
 
-    Iterates from N=1 upward and returns the highest order whose
-    (optionally regularised) Gram matrix ``Y^T Y`` has a condition number
-    below *condition_threshold*.
+    Iterates from :math:`N = 1` upward and returns the highest order whose
+    (optionally Tikhonov-regularised) Gram matrix
+    :math:`\mathbf{Y}^\top\mathbf{Y}` has condition number below
+    ``condition_threshold``.
 
     Parameters
     ----------
-    dirs : pyfar.Coordinates
-        The sampling grid.
-    condition_threshold : float
-        Upper bound on κ(Y^T Y).  Default 12.25 follows Bau et al. (2022),
-        corresponding to κ(Y) < 3.5 (Ben-Hur et al., 2019).
-    N_max : int
-        Maximum SH order to consider.
-    regularised : bool
-        If True, apply Tikhonov regularisation with Bau damping matrix
-        before evaluating the condition number.
-    regularisation_coefficient : float
-        Regularisation weight (Bau et al., 2022, use 10e-2 = 0.1;
-        current default is 1e-2 — see issue #37).
+    dirs : :class:`pyfar.Coordinates`
+        Sampling grid.
+    condition_threshold : float, default=12.25
+        Upper bound on :math:`\kappa(\mathbf{Y}^\top\mathbf{Y})`.  The default
+        follows [bau2022]_, equivalent to :math:`\kappa(\mathbf{Y}) < 3.5`
+        ([benhur2019]_).
+    N_max : int, default=35
+        Maximum SH order to test.
+    regularised : bool, default=True
+        If ``True``, add the Bau damping matrix
+        :func:`build_bau_damping` scaled by ``regularisation_coefficient``
+        before computing the condition number.
+    regularisation_coefficient : float, default=1e-2
+        Tikhonov weight applied to the damping matrix.
 
     Returns
     -------
-    N : int
-        Largest admissible SH order (1-based). Returns 1 if no order
-        satisfies the condition_threshold.
+    int
+        Largest admissible SH order.  Returns ``1`` if no order satisfies
+        the threshold.
     """
     Y = sy.spherical.spherical_harmonic_basis_real(N_max, dirs)
 
@@ -84,16 +128,42 @@ def find_max_order(dirs,
     return N_max
 
 def solve_sh(Y, H):
-    """
-    Non-regularized least-squares: return coefficient matrix C so that Y·C ≈ H.
-    H is (len(dirs) × F), C is ((N+1)^2 × F).
+    r"""Solve :math:`\mathbf{Y}\mathbf{C} \approx \mathbf{H}` by Moore–Penrose pseudo-inverse.
+
+    Non-regularised least-squares.  Use :func:`build_bau_damping` and a
+    direct solve when regularisation is required (as in :func:`resample_two_step`).
+
+    Parameters
+    ----------
+    Y : :class:`numpy.ndarray`
+        SH basis matrix of shape ``(n_dirs, (N + 1) ** 2)``.
+    H : :class:`numpy.ndarray`
+        Cue matrix of shape ``(n_dirs, n_features)``.
+
+    Returns
+    -------
+    :class:`numpy.ndarray`
+        Coefficient matrix of shape ``((N + 1) ** 2, n_features)``.
     """
     return np.linalg.pinv(Y) @ H
 
 def interpolate_HRTF(query_dirs, C, N):
-    """
-    query_dirs: (Q,2) array of (az,el).
-    returns: (Q,F) matrix of interpolated HRTF magnitudes.
+    r"""Evaluate an SH expansion :math:`\mathbf{Y}(\mathbf{q})\mathbf{C}` at query directions.
+
+    Parameters
+    ----------
+    query_dirs : :class:`numpy.ndarray`
+        Query directions of shape ``(n_query, 2)`` containing
+        ``(azimuth, elevation)`` in radians.
+    C : :class:`numpy.ndarray`
+        SH coefficient matrix of shape ``((N + 1) ** 2, n_features)``.
+    N : int
+        SH order matching the columns of ``C``.
+
+    Returns
+    -------
+    :class:`numpy.ndarray`
+        Interpolated cues of shape ``(n_query, n_features)``.
     """
     Yq = build_Y(query_dirs, N)
     return Yq @ C
@@ -118,10 +188,12 @@ def complement_sampling(coordinates):
 
     Returns
     -------
-    complemented : pyfar.Coordinates
+    complemented : :class:`pyfar.Coordinates`
         The complemented sampling grid.
-    mask : np.ndarray
-        Boolean array. ``True`` at the position of complemented points
+    mask : :class:`numpy.ndarray`
+        Boolean array of shape ``(complemented.csize,)``; ``True`` at
+        positions corresponding to mirrored (complemented) points and
+        ``False`` for the original measurement directions.
     """
 
     # detect and check minimum elevation
@@ -148,40 +220,56 @@ def complement_sampling(coordinates):
 
 # method from Fabian in test_resampling
 def resample_two_step(cues, coordinates, template, second_step, **kwargs):
-    """
-    Resample localization cues.
+    """Resample localisation cues using the two-step procedure of [ahrens2012]_.
+
+    Stage 1: low-order SH extrapolation completes missing low-elevation
+    directions by mirroring measured points across the horizontal plane
+    (see :func:`complement_sampling`).  Stage 2: high-order interpolation
+    of the complemented cues onto ``template``.
 
     Parameters
     ----------
-    cues : array, list of arrays
-        Cues as an array or list of arrays. For each array, ``shape[-2]`` must
-        equal the number of source positions in `coordinates`.
-    coordinates : pyfar.Coordinates
-        Coordinates of the cues
-    template : pyfar.Coordinates or `None`, optional
-        Coordinates to which the cues are interpolated to. If `None` (default),
-        uses spherical n-design of 64th degree.
-    second_step : string
-        'SH' or 'Barycentric' (case insensitive)
-    **kwargs
-        Optional parameters forwarded to :func:`find_max_order` and used
-        for Tikhonov regularisation:
+    cues : :class:`numpy.ndarray` or list of :class:`numpy.ndarray`
+        Cues as a single array or a list of arrays.  For each array,
+        ``shape[-2]`` must equal the number of source positions in
+        ``coordinates``.  When a list is passed, the result is also a list
+        in the same order.
+    coordinates : :class:`pyfar.Coordinates`
+        Source coordinates corresponding to the cue rows.
+    template : :class:`pyfar.Coordinates` or None, default=None
+        Output directions.  ``None`` selects a 64th-degree spherical
+        t-design (2,112 directions).
+    second_step : {'SH', 'SHMAX', 'barycentric'}
+        Stage-2 interpolator (case-insensitive).
 
-        regularisation_coefficient : float, default=1e-2
-            Regularisation weight for the Bau damping matrix.
-        condition_threshold : float, default=12.25
-            Condition number threshold for :func:`find_max_order`.
-        norm : {1, 2}, default=1
-            Gain normalisation for the ``'barycentric'`` method.
-            Forwarded to :func:`~bayesian_listener.utils.vbap_interpolate`.
+        - ``'SH'``: regularised SH interpolation at the maximum stable order
+          for ``coordinates_complemented``.
+        - ``'SHMAX'``: regularised SH interpolation at fixed order 44.
+        - ``'barycentric'``: VBAP weights on the convex hull.
+    **kwargs
+        Forwarded options:
+
+        - ``regularisation_coefficient`` (float, default 1e-2) — Tikhonov
+          weight on the Bau damping matrix.
+        - ``condition_threshold`` (float, default 12.25) — condition-number
+          bound forwarded to :func:`find_max_order`.
+        - ``norm`` (``{1, 2}``, default 1) — gain normalisation for
+          ``'barycentric'``; see :func:`~bayesian_listener.utils.vbap_interpolate`.
 
     Returns
     -------
-    cues : array, list of arrays
-        Resampled cues. For each array, ``shape[-2]`` equal the number of
-        source positions in `template`.
-    template_coords : pyfar.Coordinates
-        Output coordinates of resampled cues.
+    cues : :class:`numpy.ndarray` or list of :class:`numpy.ndarray`
+        Resampled cues.  ``shape[-2]`` of each array equals
+        ``template.csize``.  Same container type as the input.
+    template_coords : :class:`pyfar.Coordinates`
+        Output directions.
+
+    Raises
+    ------
+    TypeError
+        If ``coordinates`` or ``template`` is not :class:`pyfar.Coordinates`.
+    ValueError
+        If ``second_step`` is not one of the three accepted values.
     """
     regularisation_coefficient = kwargs.get('regularisation_coefficient', 1e-2)
     condition_threshold = kwargs.get('condition_threshold', 12.25)
@@ -278,7 +366,9 @@ def resample_two_step(cues, coordinates, template, second_step, **kwargs):
         cues = [np.matmul(Y_template, c) for c in cues]
 
     else:
-        raise ValueError("second step must be 'barycentric' or 'sh'")
+        raise ValueError(
+            "second_step must be 'SH', 'SHMAX', or 'barycentric' "
+            "(case-insensitive)")
 
     if not passed_list:
         cues = cues[0]
@@ -290,29 +380,32 @@ def resample_barumerli2023(values,
                            coords_in,
                            template=None,
                            flag_regularisation = True):
-    """
-    Resample using spherical harmonics as in Barumerli et al. 2023.
+    """Resample with order-15 SH interpolation, as in [barumerli2023]_.
+
+    Single-step SH interpolation at order :math:`N = 15` with optional
+    Tikhonov regularisation.  Retained for backward compatibility with the
+    original MATLAB implementation; assigns no probability mass to
+    directions below the lowest measured elevation (see :ref:`background_limitations`).
 
     Parameters
     ----------
-    values : array or list of arrays
-        Single cue array of shape (n_dirs, ...) or list of cue arrays.
-        If list, each array must have shape (n_dirs, ...)
-        where first dimension matches.
-    coords_in : pyfar.Coordinates
-        Source coordinates
-    template : pyfar.Coordinates or `None`, optional
-        Coordinates to which the cues are interpolated to. If `None` (default),
-        uses spherical n-design of 64th degree.
-    flag_regularisation : bool
-        Whether to use Tikhonov regularization
+    values : :class:`numpy.ndarray` or list of :class:`numpy.ndarray`
+        Single cue of shape ``(n_dirs, ...)`` or a list of cues whose first
+        dimension matches.
+    coords_in : :class:`pyfar.Coordinates`
+        Source coordinates of the input cues.
+    template : :class:`pyfar.Coordinates` or None, default=None
+        Output directions.  ``None`` selects a 64th-degree spherical t-design.
+    flag_regularisation : bool, default=True
+        If ``True``, apply a fixed Tikhonov regulariser
+        (:math:`\\lambda = 4`) ignoring the first three SH orders.
 
     Returns
     -------
-    values_out : array or list of arrays
-        Resampled cues. Returns same type (single array or list) as input.
-    template_coords : pyfar.Coordinates
-        Output coordinates of resampled cues.
+    values_out : :class:`numpy.ndarray` or list of :class:`numpy.ndarray`
+        Resampled cues; same container type as ``values``.
+    template_coords : :class:`pyfar.Coordinates`
+        Output directions.
     """
     N_sph = 15
 
@@ -399,36 +492,37 @@ def resample_barumerli2023(values,
     return cues_out, template
 
 def resample(cues, coordinates, template=None, method='SH', **kwargs):
-    """
-    Unified resample interface that handles both single and multiple cues.
+    """Unified entry point for the four resampling methods.
 
     Parameters
     ----------
-    cues : array or list of arrays
-        Single cue array of shape (n_dirs, ...) or list of cue arrays.
-        If list, each array must have shape (n_dirs, ...)
-        where first dimension matches.
-    coordinates : pf.Coordinates
-        Source coordinates
-    template : pyfar.Coordinates or `None`, optional
-        Coordinates to which the cues are interpolated to. If `None` (default),
-        uses 64th degree spherical n-design for methods 'SH', 'barycentric', and
-        'barumerli2023'.
-    method : str
-        Resampling method: 'SH', 'SHMAX', 'barycentric', or 'barumerli2023'
+    cues : :class:`numpy.ndarray` or list of :class:`numpy.ndarray`
+        Single cue of shape ``(n_dirs, ...)`` or a list of cues whose first
+        dimension matches.
+    coordinates : :class:`pyfar.Coordinates`
+        Source coordinates of the input cues.
+    template : :class:`pyfar.Coordinates` or None, default=None
+        Output directions.  ``None`` selects a 64th-degree spherical t-design
+        for every method.
+    method : {'SH', 'SHMAX', 'barycentric', 'barumerli2023'}, default='SH'
+        Resampling method (case-insensitive).
     **kwargs
-        Forwarded to :func:`resample_two_step` for 'SH', 'SHMAX', and
-        'barycentric' methods.  See :func:`resample_two_step` for details
-        (``regularisation_coefficient``, ``condition_threshold``, ``norm``).
+        Forwarded to :func:`resample_two_step` for ``'SH'``, ``'SHMAX'``,
+        and ``'barycentric'``: ``regularisation_coefficient``,
+        ``condition_threshold``, ``norm``.
 
     Returns
     -------
-    result : array or list of arrays
-        Resampled cues. Returns same type (single array or list) as input.
-        Each array has shape (n_template_dirs, ...)
-        matching input except first dimension.
-    template_coords : pyfar.Coordinates
-        Output coordinates
+    result : :class:`numpy.ndarray` or list of :class:`numpy.ndarray`
+        Resampled cues with first dimension equal to ``template.csize``;
+        same container type as ``cues``.
+    template_coords : :class:`pyfar.Coordinates`
+        Output directions.
+
+    Raises
+    ------
+    ValueError
+        If ``method`` is none of the four accepted values.
     """
     if method.lower() == 'barycentric':
         result, template_coords = resample_two_step(cues, coordinates,
@@ -453,20 +547,21 @@ def plot_resampling_grid(coords_meas_cart,
                          dirs_virt,
                          missing_mask,
                          z_min_meas):
-    """
-    Plot the resampling grid showing measured directions (black)
-    and added directions (red).
+    """Plot measured (black) and added (red) directions on a 3-D + 2-D figure.
 
     Parameters
     ----------
-    coords_meas_cart : ndarray, shape (M, 3)
-        Measured directions in Cartesian coordinates
-    dirs_virt : ndarray, shape (V, 3)
-        Virtual grid directions in Cartesian coordinates
-    missing_mask : ndarray, shape (V,)
-        Boolean mask indicating which virtual directions were added
+    coords_meas_cart : :class:`numpy.ndarray`
+        Measured directions in Cartesian coordinates, shape ``(n_meas, 3)``.
+    dirs_virt : :class:`numpy.ndarray`
+        Virtual grid directions in Cartesian coordinates, shape
+        ``(n_virt, 3)``.
+    missing_mask : :class:`numpy.ndarray`
+        Boolean mask of shape ``(n_virt,)`` selecting which virtual
+        directions were added (i.e. fall in the unmeasured region).
     z_min_meas : float
-        Minimum z-coordinate of measured directions
+        Minimum z-coordinate of the measured directions; the horizontal
+        plane at this height is drawn as a translucent reference surface.
     """
     import matplotlib.pyplot as plt
 

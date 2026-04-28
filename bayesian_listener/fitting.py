@@ -1,3 +1,17 @@
+"""Two-stage maximum-likelihood fitting of the Bayesian listener model.
+
+Implements the procedure of [barumerli2026]_, §2.2:
+
+1. **Stage 1 — motor noise.**  Estimate :math:`\\kappa_m` from a
+   restricted lateral-only likelihood (Eq. 12 of [barumerli2026]_) using
+   ITD+ILD cues only.  See :func:`estimate_motor_noise`, :func:`fit_kappa_ml`.
+2. **Stage 2 — spectral and prior noise.**  Hold :math:`\\hat{\\kappa}_m`
+   fixed and jointly fit :math:`\\sigma_{\\mathrm{mon}}` and
+   :math:`\\sigma_{\\mathrm{prior}}` to the full-sphere likelihood
+   (Eq. 13 of [barumerli2026]_) via BADS [acerbi2017]_.
+
+The high-level wrapper :func:`fit_listener` runs both stages.
+"""
 import numpy as np
 import sys
 from pathlib import Path
@@ -12,30 +26,84 @@ import pyfar as pf
 from bayesian_listener.metrics import METRIC_FUNCTIONS
 
 def allcomb(*arrays):
-    """Cartesian product of input arrays (equivalent to MATLAB allcomb)."""
+    """Cartesian product of input arrays (equivalent to MATLAB ``allcomb``).
+
+    Parameters
+    ----------
+    *arrays : sequence of 1-D array-like
+        Input arrays to combine.  Each must be 1-D.
+
+    Returns
+    -------
+    :class:`numpy.ndarray`
+        Array of shape ``(prod(len(a) for a in arrays), len(arrays))`` whose
+        rows enumerate every combination of one element from each input.
+
+    Examples
+    --------
+    >>> allcomb([0, 1], [10, 20])
+    array([[ 0, 10],
+           [ 0, 20],
+           [ 1, 10],
+           [ 1, 20]])
+    """
     return np.array(list(product(*arrays)))
 
 def wrap_to_pi(rad):
-    """Wrap angles to [-pi, pi)."""
+    r"""Wrap angles to the interval :math:`[-\pi, \pi)`.
+
+    Parameters
+    ----------
+    rad : float or :class:`numpy.ndarray`
+        Angle(s) in radians.
+
+    Returns
+    -------
+    float or :class:`numpy.ndarray`
+        Wrapped angle(s), same shape as ``rad``.
+
+    Notes
+    -----
+    Functionally identical to :func:`bayesian_listener.metrics.wrap_to_pi`;
+    duplicated here so this module has no dependency on ``metrics``.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> float(wrap_to_pi(np.pi + 0.1))    # doctest: +ELLIPSIS
+    -3.041592653...
+    """
     return (rad + np.pi) % (2 * np.pi) - np.pi
 
 def von_mises_loglik_mc(kappa, resp_lat, est_lat_mc):
-    """
-    Negative log-likelihood for von Mises with Monte Carlo estimates.
+    r"""Negative log-likelihood of a von Mises with Monte Carlo predictions.
+
+    Implements the lateral-only likelihood of Eq. 12 of [barumerli2026]_,
+    approximated by averaging the von Mises pdf over ``n_mc`` Monte Carlo
+    samples per observation.
 
     Parameters
     ----------
     kappa : float
-        Von Mises concentration parameter.
-    resp_lat : ndarray
-        Observed lateral angles (n_obs,) in radians.
-    est_lat_mc : ndarray
-        Monte Carlo model predictions (n_obs x n_mc) in radians.
+        Von Mises concentration :math:`\kappa` (positive).
+    resp_lat : :class:`numpy.ndarray`
+        Observed lateral angles, shape ``(n_obs,)`` in radians.
+    est_lat_mc : :class:`numpy.ndarray`
+        Monte Carlo model predictions, shape ``(n_obs, n_mc)`` in radians.
 
     Returns
     -------
     float
-        Negative log-likelihood.
+        Negative log-likelihood in nats.
+
+    Examples
+    --------
+    >>> rng = np.random.default_rng(0)
+    >>> resp = rng.normal(scale=0.1, size=20)
+    >>> mc   = resp[:, None] + rng.normal(scale=0.1, size=(20, 50))
+    >>> nll  = von_mises_loglik_mc(50.0, resp, mc)
+    >>> bool(np.isfinite(nll))
+    True
     """
     log_C = -np.log(2 * np.pi * i0(kappa))
     lat_diff = resp_lat[:, None] - est_lat_mc
@@ -45,20 +113,31 @@ def von_mises_loglik_mc(kappa, resp_lat, est_lat_mc):
     return -np.sum(log_mean_probs)
 
 def fit_kappa_ml(resp_lat, est_lat_mc):
-    """
-    Fit von Mises concentration parameter via maximum likelihood.
+    r"""Fit the von Mises concentration :math:`\kappa` by 1-D bounded ML search.
+
+    Wraps :func:`scipy.optimize.minimize_scalar` (``method='bounded'``,
+    Brent's method) over the bracket :math:`\kappa \in [0.1, 1000]`.
 
     Parameters
     ----------
-    resp_lat : ndarray
-        Observed lateral angles (n_obs,) in radians.
-    est_lat_mc : ndarray
-        Monte Carlo model predictions (n_obs x n_mc) in radians.
+    resp_lat : :class:`numpy.ndarray`
+        Observed lateral angles, shape ``(n_obs,)`` in radians.
+    est_lat_mc : :class:`numpy.ndarray`
+        Monte Carlo model predictions, shape ``(n_obs, n_mc)`` in radians.
 
     Returns
     -------
     float
-        Fitted kappa (concentration parameter).
+        Maximum-likelihood concentration :math:`\hat{\kappa}`.
+
+    Examples
+    --------
+    >>> rng = np.random.default_rng(0)
+    >>> resp = rng.normal(scale=0.05, size=200)
+    >>> mc   = resp[:, None] + rng.normal(scale=0.05, size=(200, 100))
+    >>> kappa = fit_kappa_ml(resp, mc)
+    >>> bool(0.1 <= kappa <= 1000.0)
+    True
     """
     result = minimize_scalar(von_mises_loglik_mc, bounds=(0.1, 1000.0),
                             args=(resp_lat, est_lat_mc), method='bounded')
@@ -74,19 +153,28 @@ def _bessel_ratio(kappa):
     return float(i1(kappa) / i0(kappa))
 
 def sigma_to_kappa(sigma):
-    """
-    Convert circular standard deviation (degrees) to von Mises concentration.
-    Uses Bessel function ratio: solves i1(κ)/i0(κ) = exp(-σ²/2).
+    r"""Convert a circular standard deviation in degrees to a von Mises concentration.
+
+    Solves :math:`I_1(\kappa)/I_0(\kappa) = \exp(-\sigma^2/2)` for
+    :math:`\kappa` via :func:`scipy.optimize.brentq` on the Bessel-ratio
+    identity.  Falls back to the asymptotic approximation
+    :math:`\kappa \approx 1/(2(1-R))` for very small :math:`\sigma`.
 
     Parameters
     ----------
     sigma : float
-        Circular standard deviation in degrees.
+        Circular standard deviation in degrees.  Saturates to a near-uniform
+        :math:`\kappa = 10^{-6}` for ``sigma >= 180``.
 
     Returns
     -------
     float
-        Von Mises concentration parameter kappa.
+        Von Mises concentration :math:`\kappa`.
+
+    Examples
+    --------
+    >>> bool(abs(kappa_to_sigma(sigma_to_kappa(15.0)) - 15.0) < 1e-3)
+    True
     """
     if sigma >= 180.0:
         return 1e-6  # Essentially uniform
@@ -121,19 +209,26 @@ def sigma_to_kappa(sigma):
     return kappa
 
 def kappa_to_sigma(kappa):
-    """
-    Convert von Mises concentration to circular standard deviation (degrees).
-    Uses Bessel function ratio: σ = sqrt(-2 * log(i1(κ)/i0(κ))).
+    r"""Convert a von Mises concentration to a circular standard deviation in degrees.
+
+    Computes :math:`\sigma = \sqrt{-2 \log(I_1(\kappa)/I_0(\kappa))}` and
+    converts to degrees.
 
     Parameters
     ----------
     kappa : float
-        Von Mises concentration parameter.
+        Von Mises concentration :math:`\kappa` (positive).  Saturates to
+        180° for :math:`\kappa < 10^{-6}`.
 
     Returns
     -------
     float
         Circular standard deviation in degrees.
+
+    Examples
+    --------
+    >>> round(float(kappa_to_sigma(50.0)), 1)
+    8.1
     """
     if kappa < 1e-6:
         return 180.0
@@ -142,41 +237,54 @@ def kappa_to_sigma(kappa):
 
 def estimate_motor_noise(model, obs_tbl, targets_coords, subject_id=None,
                          num_repetitions=200, seed=42):
-    """
-    Estimate motor noise from behavioral data using ITD+ILD cues only.
+    r"""Estimate motor noise from behavioural data using ITD + ILD cues only (Stage 1).
 
-    This function estimates motor noise by:
-    1. Using only ITD+ILD features to predict responses (no spectral cues)
-    2. Generating Monte Carlo samples of lateral predictions
-    3. Fitting a von Mises distribution to lateral angle errors
-    4. Converting the fitted concentration to sigma_motor in degrees
+    Implements Eq. 12 of [barumerli2026]_:
 
-    The approach filters responses to ±80° lateral for numerical stability.
+    1. Build ITD + ILD predictions from the model template (no spectral cues).
+    2. Draw ``num_repetitions`` Monte Carlo lateral predictions per trial.
+    3. Restrict to trials with target lateral angle :math:`|\alpha| \le 30^\circ`
+       for numerical stability.
+    4. Fit the von Mises concentration :math:`\hat{\kappa}_m` via
+       :func:`fit_kappa_ml`.
+    5. Convert to a circular SD :math:`\hat{\sigma}_m` in degrees through
+       :func:`kappa_to_sigma`.
 
     Parameters
     ----------
-    model : BayesianListener
-        Model instance with prepared features.
-    obs_tbl : DataFrame
-        Behavioral observations with columns:
-        'azi_response', 'ele_response', 'azi_target', 'ele_target'.
-        If subject_id is provided, must also contain 'participant'.
-    targets_coords : pyfar.Coordinates
-        Target direction coordinates.
-    subject_id : str, optional
-        Subject identifier for filtering obs_tbl.
-    num_repetitions : int
-        Number of Monte Carlo samples for predictions.
-    seed : int
-        Random seed for reproducibility.
+    model : :class:`~bayesian_listener.BayesianListener`
+        Model instance with :meth:`~bayesian_listener.BayesianListener.prepare_features`
+        already called.
+    obs_tbl : :class:`pandas.DataFrame`
+        Behavioural observations with columns
+        ``'azi_response'``, ``'ele_response'``, ``'azi_target'``,
+        ``'ele_target'`` (all in degrees).  If ``subject_id`` is given,
+        must additionally contain a ``'participant'`` column.
+    targets_coords : :class:`pyfar.Coordinates`
+        Discrete target directions (one entry per unique presented direction).
+    subject_id : str or None, default=None
+        Participant identifier.  If ``None``, every row in ``obs_tbl`` is used.
+    num_repetitions : int, default=200
+        Number of Monte Carlo samples per trial.
+    seed : int, default=42
+        Seed for the noise generator.
 
     Returns
     -------
     dict
-        Dictionary with keys:
-        - 'sigma_motor': Estimated motor noise in degrees
-        - 'kappa_motor': Fitted concentration parameter
-        - 'n_trials': Number of trials used (after filtering)
+        Mapping with keys:
+
+        - ``'sigma_motor'`` (float, degrees) — estimated motor SD
+          :math:`\hat{\sigma}_m`.
+        - ``'kappa_motor'`` (float) — fitted concentration
+          :math:`\hat{\kappa}_m`.
+        - ``'n_trials'`` (int) — number of trials retained after the
+          ±30° lateral filter.
+
+    See Also
+    --------
+    fit_listener : Full two-stage fitting wrapper.
+    fit_kappa_ml : Underlying maximum-likelihood :math:`\kappa` fit.
     """
     np.random.seed(seed)
 
@@ -235,7 +343,7 @@ def estimate_motor_noise(model, obs_tbl, targets_coords, subject_id=None,
         best_indices = np.argmax(loglik, axis=1)
         est_lat_mc[i, :] = template_lat[best_indices]
 
-    # Filter to ±60° lateral for numerical stability
+    # Filter to ±30° lateral for numerical stability
     mask = np.abs(targ_lat) <= np.deg2rad(30)
     resp_lat_filt = resp_lat[mask]
     est_lat_mc_filt = est_lat_mc[mask, :]
@@ -259,30 +367,42 @@ def estimate_motor_noise(model, obs_tbl, targets_coords, subject_id=None,
 
 def negloglik(model, targets, responses, resp_targets_idx, sigmas_log,
               num_repetitions=200):
-    """
-    Negative log-likelihood function for parameter fitting.
+    r"""Negative full-sphere log-likelihood for BADS optimisation (Eq. 13 of [barumerli2026]_).
+
+    For each observation, runs Monte Carlo inference with the supplied
+    parameters, builds the von Mises–Fisher pdf around each MC prediction,
+    and accumulates :math:`-\log p(\hat{\boldsymbol{\varphi}}^* \mid
+    \boldsymbol{\varphi}, \boldsymbol{\theta})`.
 
     Parameters
     ----------
-    model : BayesianListener
-        Model instance (for running inference)
-    targets : ndarray
-        Target feature vectors (n_targets x n_features)
-    responses : pyfar.Coordinates
-        Observed responses as spatial coordinates.
-    resp_targets_idx : ndarray
-        Index mapping each response to a target direction (n_obs,)
-    sigmas_log : ndarray
-        Log-transformed parameters [log(sigma_ild), log(sigma_spectral),
-                                     log(kappa_motor), log(tau_prior)]
-        where tau_prior = 1 / sigma_prior^2 (precision)
-    num_repetitions : int
-        Number of Monte Carlo repetitions for likelihood evaluation.
+    model : :class:`~bayesian_listener.BayesianListener`
+        Model instance whose ``parameters`` and ``target`` are overwritten
+        in place.
+    targets : :class:`~bayesian_listener.auditory_representation.AuditoryRepresentation`
+        Subset of the model template at the unique presented directions.
+    responses : :class:`pyfar.Coordinates`
+        Observed responses, shape ``(n_obs,)``.
+    resp_targets_idx : :class:`numpy.ndarray`
+        Integer mapping of each response to its target direction, shape
+        ``(n_obs,)``.
+    sigmas_log : :class:`numpy.ndarray`
+        Log-transformed parameter vector of shape ``(4,)``:
+
+        - ``sigmas_log[0]`` — :math:`\log \sigma_{\mathrm{ild}}` (dB).
+        - ``sigmas_log[1]`` — :math:`\log \sigma_{\mathrm{mon}}` (dB).
+        - ``sigmas_log[2]`` — :math:`\log \kappa_m`.
+        - ``sigmas_log[3]`` — :math:`\log \tau_{\mathrm{prior}}` with
+          :math:`\tau_{\mathrm{prior}} = 1 / \sigma_{\mathrm{prior}}^2`
+          (precision parametrisation for a better optimisation landscape).
+    num_repetitions : int, default=200
+        Monte Carlo repetitions per trial in
+        :meth:`~bayesian_listener.BayesianListener.infer`.
 
     Returns
     -------
-    neglik : float
-        Negative log-likelihood
+    float
+        Negative log-likelihood in nats.
     """
     # Extract numpy arrays at computation boundary
     responses_cart = responses.cartesian
@@ -385,56 +505,55 @@ def fit_listener(sofa_path, obs_tbl, targets_coords,
                  num_repetitions=200, num_repetitions_motor=200,
                  num_grid_points=1, fix_sigma_ild=True,
                  motor_estimation_seed=42, verbose=True):
-    """
-    Fit the Bayesian listener model with motor noise estimated from ITD+ILD.
+    r"""Run the full two-stage fit recommended in [barumerli2026]_.
 
-    This is the recommended fitting procedure that:
-    1. Estimates motor noise from lateral errors using ITD+ILD cues only
-    2. Fixes motor noise and optionally ILD noise at estimated/default values
-    3. Fits only sigma_spectral and sigma_prior parameters
-
-    This approach follows the methodology from the parameter recovery validation.
+    1. Estimate :math:`\hat{\kappa}_m` (Eq. 12) via :func:`estimate_motor_noise`.
+    2. Hold :math:`\hat{\kappa}_m` fixed and jointly fit
+       :math:`\sigma_{\mathrm{mon}}` and :math:`\sigma_{\mathrm{prior}}`
+       (Eq. 13) via :func:`fit_listener_partial`.
 
     Parameters
     ----------
     sofa_path : str
         Path to the participant's SOFA file.
-    obs_tbl : DataFrame
-        Behavioral observations. Must contain columns:
-        'azi_response', 'ele_response', 'azi_target', 'ele_target'.
-        If subject_id is provided, must also contain 'participant'.
-    targets_coords : pyfar.Coordinates
-        Target direction coordinates.
-    interpolation_method : str
-        HRTF interpolation method (e.g. 'SH', 'SHMAX', 'barycentric',
-        'barumerli2023').
-    subject_id : str, optional
-        Subject identifier. If provided, obs_tbl is filtered to this
-        subject. If None, all rows in obs_tbl are used.
-    num_repetitions : int
-        Number of Monte Carlo repetitions for likelihood evaluation during
-        parameter fitting (default: 300).
-    num_repetitions_motor : int
-        Number of Monte Carlo repetitions for motor noise estimation
-        (default: 200).
-    num_grid_points : int
-        Number of grid points per parameter dimension for initialization.
-    fix_sigma_ild : bool
-        If True, fixes sigma_ild to 1.0 dB (default: True).
-        If False, sigma_ild is also fitted.
-    motor_estimation_seed : int
-        Random seed for motor noise estimation (default: 42).
-    verbose : bool
-        Print progress messages.
+    obs_tbl : :class:`pandas.DataFrame`
+        Behavioural observations.  Must contain columns
+        ``'azi_response'``, ``'ele_response'``, ``'azi_target'``,
+        ``'ele_target'``.  Must additionally contain ``'participant'``
+        when ``subject_id`` is given.
+    targets_coords : :class:`pyfar.Coordinates`
+        Target directions presented in the experiment.
+    interpolation_method : {'SH', 'SHMAX', 'barycentric', 'barumerli2023'}
+        Forwarded to
+        :meth:`~bayesian_listener.BayesianListener.prepare_features`.
+    subject_id : str or None, default=None
+        Participant identifier.  ``None`` uses every row of ``obs_tbl``.
+    num_repetitions : int, default=200
+        Monte Carlo repetitions for the stage-2 likelihood (Eq. 13).
+    num_repetitions_motor : int, default=200
+        Monte Carlo repetitions for the stage-1 motor-noise estimation
+        (Eq. 12).
+    num_grid_points : int, default=1
+        Initialisation grid size per parameter dimension before BADS.
+    fix_sigma_ild : bool, default=True
+        If ``True``, fix :math:`\sigma_{\mathrm{ild}} = 1.0` dB; if
+        ``False``, fit it alongside the other free parameters.
+    motor_estimation_seed : int, default=42
+        Seed forwarded to :func:`estimate_motor_noise`.
+    verbose : bool, default=True
+        Print stage-by-stage progress.
 
     Returns
     -------
     dict
-        Fitting results containing:
-        - Fitted parameters (sigma_spectral, sigma_prior)
-        - Fixed parameters (sigma_motor, sigma_ild, sigma_itd)
-        - Motor estimation results (kappa_motor, n_trials_motor)
-        - NLL and timing information
+        Result mapping with keys ``sigma_itd``, ``sigma_ild``,
+        ``sigma_spectral``, ``kappa_motor``, ``sigma_motor``,
+        ``sigma_prior``, ``nll``, ``n_trials``, ``time_*`` (timing
+        breakdown), ``success`` (bool) and on failure ``error`` (str).
+
+    See Also
+    --------
+    fit_listener_partial : Fit an arbitrary subset of parameters.
     """
     label = subject_id or Path(sofa_path).stem
     if verbose:
@@ -534,45 +653,58 @@ def fit_listener_partial(sofa_path, obs_tbl, targets_coords,
                          fixed_params=None, subject_id=None,
                          num_repetitions=200, num_grid_points=1,
                          verbose=True):
-    """
-    Fit the Bayesian listener model with a subset of parameters.
+    r"""Fit an arbitrary subset of model parameters via BADS.
 
     Parameters
     ----------
     sofa_path : str
         Path to the participant's SOFA file.
-    obs_tbl : DataFrame
-        Behavioral observations. Must contain columns:
-        'azi_response', 'ele_response', 'azi_target', 'ele_target'.
-        If subject_id is provided, must also contain 'participant'.
-    targets_coords : pyfar.Coordinates
-        Target direction coordinates.
-    interpolation_method : str
-        HRTF interpolation method (e.g. 'SH', 'SHMAX', 'barycentric',
-        'barumerli2023').
+    obs_tbl : :class:`pandas.DataFrame`
+        Behavioural observations with columns ``'azi_response'``,
+        ``'ele_response'``, ``'azi_target'``, ``'ele_target'`` (and
+        ``'participant'`` if ``subject_id`` is given).
+    targets_coords : :class:`pyfar.Coordinates`
+        Target directions presented in the experiment.
+    interpolation_method : {'SH', 'SHMAX', 'barycentric', 'barumerli2023'}
+        Forwarded to
+        :meth:`~bayesian_listener.BayesianListener.prepare_features`.
     params_to_fit : list of str
-        List of parameter names to fit. Valid options:
-        'sigma_ild', 'sigma_spectral', 'kappa_motor', 'sigma_prior'.
-        Note: sigma_prior is fit internally as tau_prior (precision = 1/sigma^2)
-        for better optimization landscape, but results are returned as sigma_prior.
-        kappa_motor is the von Mises concentration parameter for motor noise.
-    fixed_params : dict, optional
-        Dictionary of fixed parameter values. Parameters not in params_to_fit
-        and not specified here will use DEFAULT_PARAMS values.
-    subject_id : str, optional
-        Subject identifier. If provided, obs_tbl is filtered to this
-        subject. If None, all rows in obs_tbl are used.
-    num_repetitions : int
-        Number of Monte Carlo repetitions for likelihood evaluation.
-    num_grid_points : int
-        Number of grid points per parameter dimension for initialization.
-    verbose : bool
+        Subset of free parameters to fit.  Valid entries:
+
+        - ``'sigma_ild'`` — ILD noise (dB).
+        - ``'sigma_spectral'`` — monaural spectral noise (dB).
+        - ``'kappa_motor'`` — vMF motor concentration.
+        - ``'sigma_prior'`` — fitted internally as the precision
+          :math:`\tau_{\mathrm{prior}} = 1/\sigma_{\mathrm{prior}}^2`
+          (better optimisation landscape) but returned as
+          :math:`\sigma_{\mathrm{prior}}` in degrees.
+    fixed_params : dict or None, default=None
+        Mapping ``{parameter_name: value}`` for parameters held fixed.
+        Anything not listed in ``params_to_fit`` and not present here
+        falls back to the module-level ``DEFAULT_PARAMS``.
+    subject_id : str or None, default=None
+        Participant identifier; ``None`` uses every row of ``obs_tbl``.
+    num_repetitions : int, default=200
+        Monte Carlo repetitions per likelihood evaluation.
+    num_grid_points : int, default=1
+        Initialisation grid size per parameter dimension.
+    verbose : bool, default=True
         Print progress messages.
 
     Returns
     -------
     dict
-        Fitting results containing fitted parameters, NLL, and timing.
+        Result mapping with keys ``sigma_itd``, ``sigma_ild``,
+        ``sigma_spectral``, ``kappa_motor``, ``sigma_motor``,
+        ``sigma_prior``, ``nll``, ``nll_initial``, ``time_grid``,
+        ``time_bads``, ``time_total``, ``n_trials``, ``params_fitted``,
+        ``success``.
+
+    Raises
+    ------
+    ValueError
+        If any entry of ``params_to_fit`` is not one of the four valid
+        names listed above.
     """
     valid_params = ['sigma_ild', 'sigma_spectral', 'kappa_motor', 'sigma_prior']
     for p in params_to_fit:

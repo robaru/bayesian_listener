@@ -1,4 +1,18 @@
-"""This model contains helpful utility functions."""
+"""Utility functions for feature extraction, spherical sampling, and caching.
+
+Public sections:
+
+- **Feature extraction.**  :func:`compute_features`, :func:`gammatone`,
+  :func:`erb_space`, :func:`itdestimator`, :func:`mag2db`.
+- **Spherical utilities.**  :func:`scatter_von_mises`, :func:`load_n_design`,
+  :func:`vbap_interpolate`.
+- **Inference helpers.**  Vectorised Gaussian log-pdf evaluators
+  :func:`multiple_logpdfs_vec_input`,
+  :func:`multiple_logpdfs_vec_input_single_cov`, and
+  :func:`multiple_logpdfs_vec_input_single_cov_diagonal`.
+- **Caching.**  :func:`save_to_cache`, :func:`load_from_cache`,
+  :func:`clear_cache`.
+"""
 import numpy as np
 from scipy.signal import butter, hilbert, correlate, lfilter
 from scipy.io import loadmat
@@ -16,9 +30,53 @@ import os
 
 # feature functions
 def mag2db(mag):
+    r"""Convert a linear magnitude to decibels.
+
+    Computes :math:`20 \log_{10}(\mathrm{mag})`.
+
+    Parameters
+    ----------
+    mag : float or :class:`numpy.ndarray`
+        Linear magnitude (positive).
+
+    Returns
+    -------
+    float or :class:`numpy.ndarray`
+        Magnitude in dB, same shape as ``mag``.
+
+    Examples
+    --------
+    >>> float(mag2db(10.0))
+    20.0
+    """
     return 20 * np.log10(mag)
 
 def erb_space(freq_range=[7e2, 18e3], erb_spacing=1):
+    r"""Generate centre frequencies on the equivalent-rectangular-bandwidth (ERB) scale.
+
+    Translated from AMT 1.x ``audspacebw.m`` ([glasberg1990]_); converts the
+    bracketing frequencies to the ERB-rate scale, places points spaced by
+    ``erb_spacing`` ERBs, then maps back to Hz.
+
+    Parameters
+    ----------
+    freq_range : list of float, default=[700.0, 18000.0]
+        ``[low_Hz, high_Hz]`` bracket.
+    erb_spacing : float, default=1
+        Spacing between centre frequencies on the ERB-rate scale.
+
+    Returns
+    -------
+    :class:`numpy.ndarray`
+        Centre frequencies in Hz, shape ``(n_freqs,)``, monotonically
+        increasing.
+
+    Examples
+    --------
+    >>> fc = erb_space([1000.0, 4000.0])
+    >>> bool(fc[0] >= 1000.0 and fc[-1] <= 4000.0)
+    True
+    """
     #translated from amt/audspacebw.m focusing on ERB-rate scale
 
     # Convert frequency limits to auditory scale (ERB-rate scale)
@@ -179,17 +237,29 @@ def gammatone(
     return b, a, delay, z, p, k
 
 def itdestimator(signals, fs=None):
-    """
-    Estimate ITD from the given stimulus.
+    r"""Estimate the interaural time difference (ITD) by Hilbert-envelope MaxIACCe.
+
+    For each direction, low-pass filters the binaural HRIRs at 3 kHz with a
+    10th-order Butterworth filter, computes the analytic envelope of each
+    ear via the Hilbert transform, and locates the peak of their cross-
+    correlation (``MaxIACCe`` mode of AMT 1.x ``itdestimator.m``).
 
     Parameters
     ----------
-        Obj : 3D numpy array or object with IR data
-        fs : Sampling rate (required if Obj is a 3D array)
+    signals : :class:`numpy.ndarray`
+        Binaural HRIRs of shape ``(n_dirs, 2, n_samples)``.
+    fs : int
+        Sampling rate in Hz.  Required.
 
     Returns
     -------
-        toa_diff : Time of arrival difference
+    :class:`numpy.ndarray`
+        ITD in seconds, shape ``(n_dirs, 1)``.
+
+    Raises
+    ------
+    ValueError
+        If ``fs`` is ``None``.
     """
 
     pos = signals.shape[0]
@@ -232,19 +302,40 @@ def itdestimator(signals, fs=None):
 # -----------------------------------
 
 def scatter_von_mises(dirs, kappa, seed = None):
-    """Apply von Mises-Fisher distributed noise to direction vectors.
+    r"""Perturb unit-direction vectors with von Mises–Fisher noise.
+
+    Implements Eq. 7 of [barumerli2023]_: each input direction is replaced
+    by a sample from :math:`\mathrm{vMF}(\boldsymbol{\mu}_i, \kappa)`.
+    The output preserves the input shape.
 
     Parameters
     ----------
-    dirs : ndarray
-        Direction vectors in Cartesian coordinates (n x 3) or (3,).
+    dirs : :class:`numpy.ndarray`
+        Direction vectors in Cartesian coordinates, shape ``(n, 3)`` or
+        ``(3,)`` (each row should be unit-norm).
     kappa : float
-        Von Mises-Fisher concentration parameter (higher = less noise).
-    seed : int, optional
-        Random seed for reproducibility.
+        Von Mises–Fisher concentration; higher values yield tighter samples.
+        Must be positive.
+    seed : int or None, default=None
+        Seed forwarded to :func:`numpy.random.default_rng`.
+
+    Returns
+    -------
+    :class:`numpy.ndarray`
+        Perturbed direction vectors, same shape as ``dirs``.
+
+    Raises
+    ------
+    ValueError
+        If ``dirs`` does not have 3 components in its last dimension, or
+        if ``kappa`` is not positive.
     """
-    assert dirs.shape[1] == 3 or dirs.size == 3
-    assert kappa > 0, 'kappa must be positive'
+    if not (dirs.shape[1] == 3 or dirs.size == 3):
+        raise ValueError(
+            "dirs must be of shape (n, 3) or (3,); "
+            f"got shape {dirs.shape}.")
+    if kappa <= 0:
+        raise ValueError("kappa must be positive.")
 
     dirs = np.squeeze(dirs)
 
@@ -259,6 +350,26 @@ def scatter_von_mises(dirs, kappa, seed = None):
     return dirs_new
 
 def randvmf(kappa, mu, seed = None):
+    r"""Draw a single sample from a 3-D von Mises–Fisher distribution.
+
+    Uses the ``z``-axis tangent-rotation algorithm of Rubinstein (1981) and
+    Fisher et al. (1987): sample on a vMF aligned with the north pole, then
+    rotate to align with ``mu`` via a Rodrigues rotation.
+
+    Parameters
+    ----------
+    kappa : float
+        Concentration parameter (positive).
+    mu : :class:`numpy.ndarray`
+        Mean direction (unit vector), shape ``(3,)``.
+    seed : int or None, default=None
+        Seed forwarded to :func:`numpy.random.default_rng`.
+
+    Returns
+    -------
+    :class:`numpy.ndarray`
+        Single direction vector, shape ``(3,)``.
+    """
     rng = np.random.default_rng(seed)
 
 
@@ -295,6 +406,25 @@ def randvmf(kappa, mu, seed = None):
     return y
 
 def rodriguesrotation(axis_angle):
+    r"""Build a 3×3 rotation matrix from a Rodrigues axis–angle vector.
+
+    Given :math:`\boldsymbol{\omega} = \theta \hat{\mathbf{n}}`, returns
+    :math:`\mathbf{R} = \mathbf{I} + \sin\theta\, \mathbf{K} +
+    (1 - \cos\theta)\, \mathbf{K}^2`, where :math:`\mathbf{K}` is the
+    skew-symmetric cross-product matrix of :math:`\hat{\mathbf{n}}`.
+
+    Parameters
+    ----------
+    axis_angle : :class:`numpy.ndarray`
+        Axis–angle vector of shape ``(3,)``; its magnitude is the rotation
+        angle in radians.
+
+    Returns
+    -------
+    :class:`numpy.ndarray`
+        Rotation matrix of shape ``(3, 3)``.  Returns the identity when
+        ``axis_angle`` has near-zero magnitude.
+    """
     theta = np.linalg.norm(axis_angle)
     if theta < np.finfo(float).eps:
         return np.eye(3)
@@ -315,10 +445,25 @@ def rodriguesrotation(axis_angle):
 
 # inference functions
 def multiple_logpdfs_vec_input(xs, means, covs):
-    """
-    `multiple_logpdfs` assuming `xs` has shape (N samples, P features).
-    means is NxP and covs is NxPxP
-    https://gregorygundersen.com/blog/2020/12/12/group-multivariate-normal-pdf/
+    r"""Vectorised log-pdf of multivariate Gaussians with per-mean covariances.
+
+    Adapted from Gregory Gundersen's blog post on group multivariate normal
+    pdfs (https://gregorygundersen.com/blog/2020/12/12/group-multivariate-normal-pdf/).
+
+    Parameters
+    ----------
+    xs : :class:`numpy.ndarray`
+        Sample matrix of shape ``(n_samples, n_features)``.
+    means : :class:`numpy.ndarray`
+        Distribution means, shape ``(n_means, n_features)``.
+    covs : :class:`numpy.ndarray`
+        Per-mean covariance matrices, shape
+        ``(n_means, n_features, n_features)``.
+
+    Returns
+    -------
+    :class:`numpy.ndarray`
+        Log-pdf evaluations of shape ``(n_samples, n_means)``.
     """
     # NumPy broadcasts `eigh`.
     vals, vecs = np.linalg.eigh(covs)
@@ -395,14 +540,31 @@ def _multiple_logpdfs_vec_input_single_cov_numpy(xs, means, logdet, Us):
 
 @jit(nopython=True, parallel=True)
 def multiple_logpdfs_vec_input_single_cov(xs, means, logdet, Us):
-    """
-    `multiple_logpdfs` assuming `xs` has shape (N samples, P features).
-    means is NxP and cov is PxP
-    https://gregorygundersen.com/blog/2020/12/12/group-multivariate-normal-pdf/
+    r"""Numba-accelerated multivariate-Gaussian log-pdf with a shared covariance.
 
-    The big idea is to do one intensive operation, eigenvalue decomposition,
-    and then use that decomposition to compute the matrix inverse
-    and determinant cheaply.
+    The covariance is supplied through its eigen-decomposition ``(logdet, Us)``
+    (computed once by the caller) so that this hot-path function avoids any
+    per-call linear algebra.  See the numpy reference
+    :func:`_multiple_logpdfs_vec_input_single_cov_numpy` for the equivalent
+    body.  Algorithm based on the Gundersen blog post linked from
+    :func:`multiple_logpdfs_vec_input`.
+
+    Parameters
+    ----------
+    xs : :class:`numpy.ndarray`
+        Sample matrix of shape ``(n_samples, n_features)``.
+    means : :class:`numpy.ndarray`
+        Distribution means, shape ``(n_means, n_features)``.
+    logdet : float
+        Pre-computed log-determinant of the shared covariance.
+    Us : :class:`numpy.ndarray`
+        Whitening matrix, shape ``(n_features, n_features)``, equal to
+        the eigenvectors scaled by inverse square-root eigenvalues.
+
+    Returns
+    -------
+    :class:`numpy.ndarray`
+        Log-pdf evaluations of shape ``(n_samples, n_means)``.
     """
 
     n_samples = xs.shape[0]
@@ -439,9 +601,29 @@ def multiple_logpdfs_vec_input_single_cov_diagonal(xs,
                                                    means,
                                                    logdet,
                                                    sigma_inv_diag):
-    """
-    Optimized version for diagonal covariance.
-    sigma_inv_diag: (P,) array of 1/sigma_i²
+    r"""Numba log-pdf specialisation for a diagonal covariance.
+
+    For a diagonal :math:`\boldsymbol{\Sigma} = \mathrm{diag}(\sigma_i^2)`,
+    the Mahalanobis distance reduces to
+    :math:`\sum_i (x_i - \mu_i)^2 / \sigma_i^2`.
+
+    Parameters
+    ----------
+    xs : :class:`numpy.ndarray`
+        Sample matrix of shape ``(n_samples, n_features)``.
+    means : :class:`numpy.ndarray`
+        Distribution means, shape ``(n_means, n_features)``.
+    logdet : float
+        Pre-computed log-determinant of :math:`\boldsymbol{\Sigma}`,
+        i.e. :math:`\sum_i \log \sigma_i^2`.
+    sigma_inv_diag : :class:`numpy.ndarray`
+        Diagonal of :math:`\boldsymbol{\Sigma}^{-1}`, shape ``(n_features,)``,
+        i.e. :math:`1/\sigma_i^2`.
+
+    Returns
+    -------
+    :class:`numpy.ndarray`
+        Log-pdf evaluations of shape ``(n_samples, n_means)``.
     """
     devs = xs[:, None, :] - means[None, :, :]  # (n_samples, n_means, P)
     # Mahalanobis distance for diagonal cov:
@@ -517,24 +699,30 @@ def load_from_cache(cache_dir,
                     sofa_file,
                     attributes_to_restore,
                     interpolation='SH'):
-    """
-    Try to load cached data from pickle file.
+    """Load cached preprocessed data for a SOFA file.
+
+    The cache index pairs each pickle with the SOFA file's SHA256 hash and
+    the interpolation method, so a different HRTF revision or method
+    invalidates the cache automatically.
 
     Parameters
     ----------
-    cache_dir : Path or str
-        Directory containing cache files
+    cache_dir : :class:`pathlib.Path` or str
+        Directory containing the cache index and pickle files.
     sofa_file : str
-        Path to SOFA file (used for hash matching)
+        Path to the SOFA file; used for hash and name matching.
     attributes_to_restore : list of str
-        List of attribute names to restore from cache
-    interpolation : str
-        Interpolation method used (e.g., 'SH', 'barumerli2023')
+        Attribute names that must be present in the pickled dict for the
+        cache to be considered valid.
+    interpolation : str, default='SH'
+        Interpolation method recorded with the cache entry.
 
     Returns
     -------
     dict or None
-        Dictionary of cached attributes, or None if cache not found/invalid
+        Pickled attributes if a valid cache entry is found; ``None``
+        otherwise (no index, no matching entry, missing attributes, or
+        unpickling error).
     """
     cache_dir = Path(cache_dir)
     cache_index_file = cache_dir / 'cache_index.csv'
@@ -714,29 +902,40 @@ def print_memory_usage(label=""):
 
 
 def compute_features(hrir, coords, fs, spectral_range=[7e2, 18e3]):
-    """Compute ITD, ILD, and spectral cues from HRIRs.
+    r"""Compute ITD, ILD, and monaural spectral cues from binaural HRIRs.
+
+    Implements the feature extraction of Eq. 1 of [barumerli2023]_:
+
+    1. Normalise HRIRs to the frontal direction.
+    2. Estimate ITD via :func:`itdestimator` and apply the signed-log
+       perceptual warp :math:`\mathrm{sgn}(t)\,(\log(a + b\,|t|) - \log a)/b`
+       with :math:`a = 32.5\,\mu\mathrm{s}` and :math:`b = 0.095`.
+    3. Compute ILD as the dB ratio of broadband RMS energies.
+    4. Filter both ears with an ERB-spaced gammatone bank
+       (:func:`gammatone`) and convert per-band RMS to dB.
 
     Parameters
     ----------
-    hrir : ndarray
-        Head-related impulse responses, shape (n_dirs, 2, n_samples).
-    coords : pyfar.Coordinates
-        Source positions corresponding to the HRIR directions.
+    hrir : :class:`numpy.ndarray`
+        Head-related impulse responses, shape ``(n_dirs, 2, n_samples)``.
+    coords : :class:`pyfar.Coordinates`
+        Source positions, one per HRIR row.
     fs : int
         Sampling rate in Hz.
-    spectral_range : list, default=[7e2, 18e3]
-        Frequency range [low, high] in Hz for spectral analysis.
+    spectral_range : list of float, default=[700.0, 18000.0]
+        ``[low_Hz, high_Hz]`` bracket for the gammatone filterbank.
 
     Returns
     -------
-    itd : ndarray
-        Interaural time differences, shape (n_dirs, 1).
-    ild : ndarray
-        Interaural level differences, shape (n_dirs, 1).
-    spectral_cues : ndarray
-        Spectral amplitudes, shape (n_dirs, n_freqs, 2).
-    freqs : ndarray
-        Centre frequencies of the gammatone filterbank.
+    itd : :class:`numpy.ndarray`
+        Warped ITD, shape ``(n_dirs, 1)`` (dimensionless after warping).
+    ild : :class:`numpy.ndarray`
+        ILD in dB, shape ``(n_dirs, 1)``.
+    spectral_cues : :class:`numpy.ndarray`
+        Monaural spectral amplitudes in dB, shape
+        ``(n_dirs, n_freqs, 2)``.
+    freqs : :class:`numpy.ndarray`
+        Filterbank centre frequencies in Hz, shape ``(n_freqs,)``.
     """
     # normalize hrirs to frontal position
     coords2find = pf.Coordinates.from_cartesian(1, 0, 0)

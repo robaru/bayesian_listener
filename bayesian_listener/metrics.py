@@ -1,6 +1,12 @@
-"""
-This module contains functions to compute localization errors based on a set
-of target and response directions.
+"""Localisation-error metrics for evaluating sound-localisation responses.
+
+Provides :func:`localization_error` as the unified entry point and a registry
+of standard metrics in the interaural-polar coordinate system following
+[middlebrooks1999]_: lateral RMS error (``sdL``, ``rmsL``), local polar RMS
+error (``rmsPmedianlocal``), quadrant-error rate (``querrMiddlebrooks``),
+lateral and polar bias (``accL_cutoff``, ``accP_cutoff``), and a great-circle
+angular error (``angular_error``).  New metrics can be added with the
+:func:`register_metric` decorator.
 """
 import numpy as np
 import pyfar as pf
@@ -21,34 +27,30 @@ def localization_error(targets, estimations, metric,
         The target (reference) coordinates.
     estimations : pyfar.Coordinates
         The estimated coordinates to compare against.
-    metric : str or callable
+    metric : str or :py:obj:`~typing.Callable`
         The metric to use for error computation.
-        -   If a string, it should be a registered metric name.
-            You can view available metrics using describe_metrics()
-            and get specific details with describe_metrics(name).
-        -   If a callable, it must be a function that takes
-            two pyfar.Coordinates arguments (targets, estimations)
-            as the first two positional arguments, followed by any
-            additional keyword arguments passed via **kwargs.
-            In this case, the user is responsible that the correct
-            coordinate system, units, and extra arguments are used.
-            The callable should return either a single float (error value)
-            or a tuple (error_value, auxiliary_data).
-    auxiliary_output : bool, optional
-        This is irrelevant if `metric` is a callable,
-        since the user should handle this in their custom function.
-        If True, also returns the auxiliary output (dict)
-        from the metric function, if available.
-        Default is False.
+
+        - If a string, it must be a registered metric name.  Use
+          :func:`describe_metrics` to list registered names and
+          :func:`describe_metrics` ``(name)`` for details on a specific one.
+        - If a callable, it must accept two :class:`pyfar.Coordinates`
+          arguments ``(targets, estimations)`` as the first two positional
+          arguments, plus any keyword arguments forwarded via ``**kwargs``.
+          The user is responsible for coordinate convention and units.
+          The callable must return either a single float or a tuple
+          ``(error_value, auxiliary_data)``.
+    auxiliary_output : bool, default=False
+        Ignored when ``metric`` is a callable (the callable handles its own
+        return shape).  When ``True`` and ``metric`` is a registered string,
+        returns the auxiliary output dict alongside the error value.
     **kwargs : dict, optional
-        Additional keyword arguments passed to the metric function.
-        -   If `metric` is a registered string, kwargs are validated
-            against the function signature. Unknown kwargs produce a
-            UserWarning and are ignored; valid ones are forwarded.
-            You can check the expected extra kwargs for a registered metric
-            using describe_metrics(name).
-        -   If `metric` is a callable, kwargs are forwarded as-is
-            with no validation. The user is responsible for correctness.
+        Forwarded to the metric function.
+
+        - For registered metrics, kwargs are validated against the function
+          signature.  Unknown kwargs raise a :class:`UserWarning` and are
+          dropped; valid ones are forwarded.  See :func:`describe_metrics`
+          ``(name)`` for the per-metric kwarg list.
+        - For callables, kwargs are forwarded as-is with no validation.
 
     Returns
     -------
@@ -65,25 +67,25 @@ def localization_error(targets, estimations, metric,
 
     >>> error = localization_error(targets, estimations,
     ...                            'accL_cutoff',
-    ...                            cutoff=np.deg2rad(30))
+    ...                            cutoff=np.deg2rad(30))      # doctest: +SKIP
 
     Registered metric with auxiliary output:
 
     >>> error, aux = localization_error(targets, estimations,
     ...                                 'querrMiddlebrooks',
-    ...                                 auxiliary_output=True)
-    >>> print(error)
+    ...                                 auxiliary_output=True)  # doctest: +SKIP
+    >>> print(error)                                            # doctest: +SKIP
     9.375
-    >>> print(aux)
+    >>> print(aux)                                              # doctest: +SKIP
     {'confusion_count': 48, 'response_count': 512}
 
     Custom callable with extra kwarg:
 
-    >>> def my_metric(targets, estimations, threshold=0.5):
+    >>> def my_metric(targets, estimations, threshold=0.5):     # doctest: +SKIP
     ...     ...
     >>> error = localization_error(targets, estimations,
     ...                            my_metric,
-    ...                            threshold=0.1)
+    ...                            threshold=0.1)               # doctest: +SKIP
     """
     # Accept only Coordinates instances
     if not isinstance(targets, pf.Coordinates) or \
@@ -194,8 +196,9 @@ def register_metric(name,
 
     Returns
     -------
-    decorator : function
-        Decorator that registers the metric function.
+    decorator : callable
+        Decorator that wraps the target function and registers it under
+        ``name`` in :data:`METRIC_FUNCTIONS`.
     """
     def decorator(func):
         """
@@ -282,13 +285,37 @@ def describe_metrics(name=None):
 
 
 def wrap_to_pi(rad):
-    """Wrap angles to [-π, π)."""
+    r"""Wrap angles to :math:`[-\pi, \pi)`.
+
+    Parameters
+    ----------
+    rad : float or :class:`numpy.ndarray`
+        Angle(s) in radians.
+
+    Returns
+    -------
+    float or :class:`numpy.ndarray`
+        Wrapped angle(s), same shape as ``rad``, in radians.
+    """
     return (rad + np.pi) % (2 * np.pi) - np.pi
 
 
 def wrap_polar_angle(angle_rad):
-    """
-    Wrap polar angles to the range [-π/2, 3π/2) ≡ [-90°, 270°).
+    r"""Wrap polar (vertical) angles to :math:`[-\pi/2, 3\pi/2)`.
+
+    The interaural-polar convention places the front pole at ``0`` and the
+    rear pole at ``π``; wrapping to ``[-π/2, 3π/2)`` keeps the upper
+    hemisphere contiguous and simplifies front/back error computations.
+
+    Parameters
+    ----------
+    angle_rad : float or :class:`numpy.ndarray`
+        Polar angle(s) in radians.
+
+    Returns
+    -------
+    float or :class:`numpy.ndarray`
+        Wrapped angle(s) in radians, same shape as ``angle_rad``.
     """
     return (angle_rad + np.pi / 2) % (2 * np.pi) - np.pi / 2
 
@@ -308,9 +335,26 @@ def wrap_polar_angle(angle_rad):
     ylabel="Lateral RMS error (rad)",
 )
 def sdL(true, est):
-    """
-    Compute lateral RMS error within ±60° lateral.
-    More details in the decorator above.
+    r"""Lateral standard-deviation error within :math:`\pm 80^\circ` lateral.
+
+    Returns the standard deviation (square root of variance) of the
+    response–target lateral-angle difference, restricted to estimations whose
+    lateral angle satisfies :math:`|\hat{\alpha}| \le 80^\circ`.  See
+    [middlebrooks1999]_ for the foundational definition.
+
+    Parameters
+    ----------
+    true : :class:`numpy.ndarray`
+        Target directions in horizontal-polar convention with lateral angles
+        in radians, shape ``(..., 3)``.
+    est : :class:`numpy.ndarray`
+        Estimated directions, same shape and convention as ``true``.
+
+    Returns
+    -------
+    float
+        Lateral SD in radians, or ``np.nan`` if no estimations fall within
+        the ±80° band.
     """
     # lateral in [-π, π), then restrict to [-π/2, π/2]
     lat_true = wrap_to_pi(true[..., 0])
@@ -340,9 +384,20 @@ def sdL(true, est):
     ylabel="Lateral RMS error (rad)",
 )
 def rmsL(true, est):
-    """
-    Compute lateral RMS error within ±60° lateral.
-    More details in the decorator above.
+    r"""Lateral RMS error within :math:`\pm 60^\circ` lateral ([middlebrooks1999]_).
+
+    Parameters
+    ----------
+    true : :class:`numpy.ndarray`
+        Target directions, horizontal-polar with lateral angle in radians.
+    est : :class:`numpy.ndarray`
+        Estimated directions, same convention as ``true``.
+
+    Returns
+    -------
+    float
+        Lateral RMS in radians, or ``np.nan`` if no estimations fall within
+        the ±60° band.
     """
     # lateral in [-π, π), then restrict to [-π/2, π/2]
     lat_true = wrap_to_pi(true[..., 0])
@@ -379,9 +434,23 @@ def rmsL(true, est):
     ylabel="Lateral bias (rad)",
 )
 def accL_cutoff(true, est, cutoff=np.pi):
-    """
-    Compute lateral bias (mean signed error) within ±cutoff° lateral.
-    More details in the decorator above.
+    r"""Lateral bias (mean signed error) within :math:`\pm` ``cutoff``.
+
+    Parameters
+    ----------
+    true : :class:`numpy.ndarray`
+        Target directions, horizontal-polar with lateral angle in radians.
+    est : :class:`numpy.ndarray`
+        Estimated directions.
+    cutoff : float, default=π
+        Lateral-angle threshold in radians; only targets with
+        :math:`|\alpha| \le` ``cutoff`` are included.
+
+    Returns
+    -------
+    float
+        Mean signed lateral error in radians (positive: rightward bias),
+        or ``np.nan`` if no targets fall within the band.
     """
     lat_true = wrap_to_pi(true[..., 0])
     lat_est = wrap_to_pi(est[..., 0])
@@ -414,9 +483,23 @@ def accL_cutoff(true, est, cutoff=np.pi):
     ylabel="Elevation bias (rad)",
 )
 def accP_cutoff(true, est, cutoff=np.deg2rad(30)):
-    """
-    Compute elevation bias (mean signed error) within ±cutoff° lateral.
-    More details in the decorator above.
+    r"""Polar bias (mean signed error) within :math:`\pm` ``cutoff`` lateral ([middlebrooks1999]_).
+
+    Parameters
+    ----------
+    true : :class:`numpy.ndarray`
+        Target directions, horizontal-polar with angles in radians.
+    est : :class:`numpy.ndarray`
+        Estimated directions.
+    cutoff : float, default=π/6
+        Lateral-angle threshold in radians; only estimations with
+        :math:`|\hat{\alpha}| \le` ``cutoff`` are included.
+
+    Returns
+    -------
+    float
+        Mean signed polar error in radians (positive: upward bias), or
+        ``np.nan`` if no estimations fall within the band.
     """
     lat_est = wrap_to_pi(est[..., 0])
     mask = np.abs(lat_est) <= cutoff
@@ -446,27 +529,50 @@ def accP_cutoff(true, est, cutoff=np.deg2rad(30)):
     ylabel="Local central RMS polar error (rad)",
 )
 def rmsPmedianlocal(true, est):
-    """
-    Compute local RMS polar error within ±30° lateral and polar error < 90°.
-    More details in the decorator above.
+    r"""Local RMS polar error within :math:`\pm 30^\circ` lateral, excluding quadrant errors.
+
+    Restricted to estimations with lateral angle :math:`|\hat{\alpha}| \le 30^\circ`
+    and polar error :math:`|\Delta \beta| < 90^\circ`.  Definition follows
+    [middlebrooks1999]_.
+
+    Parameters
+    ----------
+    true : :class:`numpy.ndarray`
+        Target directions, horizontal-polar with angles in radians.
+    est : :class:`numpy.ndarray`
+        Estimated directions.
+
+    Returns
+    -------
+    float
+        Local polar RMS in radians.
+
+    Raises
+    ------
+    ValueError
+        If estimated lateral angles fall outside :math:`[-\pi/2, \pi/2]`,
+        if no estimations land in the central band, or if every central
+        estimation has a polar error :math:`\ge 90^\circ`.
     """
     # lateral in [-π, π), then restrict to [-π/2, π/2]
     lat_est = wrap_to_pi(est[..., 0])
-    assert np.all(np.abs(lat_est) <= np.pi/2), \
-        "Lateral angles must be in [-π/2, π/2]"
+    if not np.all(np.abs(lat_est) <= np.pi / 2):
+        raise ValueError("Lateral angles must be in [-π/2, π/2].")
 
     pol_true = wrap_polar_angle(true[..., 1])  # polar in [-π/2, 3π/2)
     pol_est = wrap_polar_angle(est[..., 1])
 
     # 1. Select central responses: lateral response within ±30°
     central_mask = np.abs(lat_est) <= np.deg2rad(30)
-    assert np.any(central_mask), \
-        "No central responses found within ±30° lateral range."
+    if not np.any(central_mask):
+        raise ValueError(
+            "No central responses found within ±30° lateral range.")
 
     # 2. Exclude responses with polar error greater than 90°
     polar_diff = wrap_to_pi(pol_est - pol_true)[central_mask]
     local_mask = np.abs(polar_diff) < np.deg2rad(90)
-    assert np.any(local_mask), "No responses with polar error < 90° found."
+    if not np.any(local_mask):
+        raise ValueError("No responses with polar error < 90° found.")
 
     local_polar_diff = polar_diff[local_mask]
     return np.sqrt(np.mean(local_polar_diff ** 2))
@@ -490,22 +596,49 @@ def rmsPmedianlocal(true, est):
     },
 )
 def querrMiddlebrooks(true, est):
-    """
-    Compute quadrant error rate as defined in Middlebrooks (1999).
-    More details in the decorator above.
+    r"""Quadrant-error rate within :math:`\pm 30^\circ` lateral ([middlebrooks1999]_).
+
+    Counts the fraction of central-band estimations whose polar error
+    satisfies :math:`|\Delta \beta| \ge 90^\circ`.
+
+    Parameters
+    ----------
+    true : :class:`numpy.ndarray`
+        Target directions, horizontal-polar with angles in radians.
+    est : :class:`numpy.ndarray`
+        Estimated directions.
+
+    Returns
+    -------
+    qerr : float
+        Quadrant-error rate as a percentage.
+    aux : dict
+        Mapping with keys:
+
+        - ``'confusion_count'`` (int) — number of estimations with
+          :math:`|\Delta \beta| \ge 90^\circ`.
+        - ``'response_count'`` (int) — total estimations within the
+          central ±30° lateral band.
+
+    Raises
+    ------
+    ValueError
+        If estimated lateral angles fall outside :math:`[-\pi/2, \pi/2]`,
+        or if no estimations land in the central ±30° band.
     """
     # lateral in [-π, π), then restrict to [-π/2, π/2]
     lat_est = wrap_to_pi(est[..., 0])
-    assert np.all(np.abs(lat_est) <= np.pi/2), \
-        "Lateral angles must be in [-π/2, π/2]"
+    if not np.all(np.abs(lat_est) <= np.pi / 2):
+        raise ValueError("Lateral angles must be in [-π/2, π/2].")
 
     pol_true = wrap_polar_angle(true[..., 1])  # polar in [-π/2, 3π/2)
     pol_est = wrap_polar_angle(est[..., 1])
 
     # 1. Filter central responses: lateral response within ±30°
     central_mask = np.abs(lat_est) <= np.deg2rad(30)
-    assert np.any(central_mask), \
-        "No central responses found within ±30° lateral range."
+    if not np.any(central_mask):
+        raise ValueError(
+            "No central responses found within ±30° lateral range.")
 
     # 2. Compute polar error and count confusions (polar error ≥ 90°)
     polar_error = np.abs(wrap_to_pi(pol_est - pol_true))[central_mask]
@@ -529,9 +662,24 @@ def querrMiddlebrooks(true, est):
     ylabel="Angular error (rad)",
 )
 def angular_error(true, est):
-    """
-    Compute mean great-circle angular error between target and estimation
-    unit vectors.  More details in the decorator above.
+    r"""Mean great-circle angular error between target and estimation unit vectors.
+
+    Computes :math:`\bar{\theta} = \frac{1}{N} \sum \arccos(
+    \mathbf{t}_i \cdot \hat{\mathbf{e}}_i)` with the dot product clipped
+    to :math:`[-1, 1]` for numerical safety.
+
+    Parameters
+    ----------
+    true : :class:`numpy.ndarray`
+        Target directions in Cartesian coordinates, shape ``(..., 3)``;
+        each row should be unit-norm.
+    est : :class:`numpy.ndarray`
+        Estimated directions, same shape and convention.
+
+    Returns
+    -------
+    float
+        Mean angular error in radians.
     """
     # Dot product row-wise, clipped to [-1, 1] for numerical safety
     dots = np.sum(true * est, axis=-1)

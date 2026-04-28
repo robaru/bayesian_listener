@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 610 100">
+  <!--
+    Pipeline diagram: Feature Extraction -> Bayesian Inference -> Motor Noise -> Response
+    Uses currentColor throughout so the diagram adapts to Furo light and dark modes.
+  -->
+  <style>
+    text { font-family: system-ui, -apple-system, sans-serif; fill: currentColor; }
+    .title { font-size: 12px; font-weight: 600; }
+    .sub   { font-size: 10px; opacity: 0.72; }
+  </style>
+
+  <!-- Box 1: Feature Extraction -->
+  <rect x="5" y="16" width="148" height="66" rx="5"
+        fill="none" stroke="currentColor" stroke-width="1.5"/>
+  <text class="title" x="79" y="42" text-anchor="middle">Feature Extraction</text>
+  <text class="sub"   x="79" y="57" text-anchor="middle">ITD · ILD · Spectral</text>
+  <text class="sub"   x="79" y="71" text-anchor="middle">t = [x_itd, x_ild, x_mon]</text>
+
+  <!-- Arrow 1 → 2 -->
+  <line x1="153" y1="49" x2="175" y2="49" stroke="currentColor" stroke-width="1.5"/>
+  <polygon points="175,44 187,49 175,54" fill="currentColor"/>
+
+  <!-- Box 2: Bayesian Inference -->
+  <rect x="187" y="16" width="148" height="66" rx="5"
+        fill="none" stroke="currentColor" stroke-width="1.5"/>
+  <text class="title" x="261" y="42" text-anchor="middle">Bayesian Inference</text>
+  <text class="sub"   x="261" y="57" text-anchor="middle">Posterior  p(&#x03C6; | t)</text>
+  <text class="sub"   x="261" y="71" text-anchor="middle">MAP estimate &#x03C6;&#x0302;&#x2019;</text>
+
+  <!-- Arrow 2 → 3 -->
+  <line x1="335" y1="49" x2="357" y2="49" stroke="currentColor" stroke-width="1.5"/>
+  <polygon points="357,44 369,49 357,54" fill="currentColor"/>
+
+  <!-- Box 3: Motor Noise -->
+  <rect x="369" y="16" width="138" height="66" rx="5"
+        fill="none" stroke="currentColor" stroke-width="1.5"/>
+  <text class="title" x="438" y="42" text-anchor="middle">Motor Noise</text>
+  <text class="sub"   x="438" y="57" text-anchor="middle">m &#x007E; vMF(0, &#x03BA;&#x2098;)</text>
+  <text class="sub"   x="438" y="71" text-anchor="middle">&#x03C6;&#x0302; = &#x03C6;&#x0302;&#x2019; + m</text>
+
+  <!-- Arrow 3 → output -->
+  <line x1="507" y1="49" x2="529" y2="49" stroke="currentColor" stroke-width="1.5"/>
+  <polygon points="529,44 541,49 529,54" fill="currentColor"/>
+
+  <!-- Output box -->
+  <rect x="541" y="26" width="64" height="46" rx="5"
+        fill="none" stroke="currentColor" stroke-width="1.5"/>
+  <text class="title" x="573" y="47" text-anchor="middle">Response</text>
+  <text class="sub"   x="573" y="62" text-anchor="middle">&#x03C6;&#x0302;</text>
+</svg>

@@ -4,7 +4,7 @@ import pyfar as pf
 import sofar
 from pathlib import Path
 import urllib.request
-from bayesian_listener import BayesianListener, AuditoryRepresentation, Barumerli2025
+from bayesian_listener import BayesianListener, Barumerli2023
 from bayesian_listener.auditory_representation import Barumerli2023pge
 from bayesian_listener.utils import save_to_cache, load_from_cache
 
@@ -107,7 +107,7 @@ def test_interp():
     am.prepare_features()
 
     assert am.template is not None, 'Template should not be None'
-    assert isinstance(am.template, Barumerli2025)
+    assert isinstance(am.template, Barumerli2023)
 
     assert am.target.spectral_cues.ndim == 3
     assert am.template.spectral_cues.ndim == 3
@@ -188,13 +188,13 @@ def test_load_cached_data():
 # New tests for the refactored API
 # -----------------------------------------------------------------------
 
-def test_compute_target_sets_barumerli2025():
-    """compute_target() sets self.target as Barumerli2025 with correct shapes."""
+def test_compute_target_sets_barumerli2023():
+    """compute_target() sets self.target as Barumerli2023 with correct shapes."""
     sofa_file = get_sofa_file()
     am = BayesianListener(sofa_file)
     am.compute_target()
 
-    assert isinstance(am.target, Barumerli2025)
+    assert isinstance(am.target, Barumerli2023)
     n_dirs = am.hrir.shape[0]
     assert am.target.itd.shape[0] == n_dirs
     assert am.target.ild.shape[0] == n_dirs
@@ -203,14 +203,14 @@ def test_compute_target_sets_barumerli2025():
     assert am.target.features.shape[0] == n_dirs
 
 
-def test_compute_template_sets_barumerli2025():
+def test_compute_template_sets_Barumerli2023():
     """compute_template() sets self.template on a uniform grid."""
     sofa_file = get_sofa_file()
     am = BayesianListener(sofa_file)
     am.compute_target()
     am.compute_template()
 
-    assert isinstance(am.template, Barumerli2025)
+    assert isinstance(am.template, Barumerli2023)
     assert am.template.coords is not None
     assert am.template.spectral_cues.ndim == 3
     assert am.template.features.ndim == 2
@@ -250,16 +250,16 @@ def test_convention_mismatch_raises():
     am = BayesianListener(sofa_file)
     am.prepare_features()
 
-    class FakeAR(AuditoryRepresentation):
+    class FakeConvention(Barumerli2023):
         convention = 'barumerli2023pge'
-        coords = am.template.coords
-        freqs = am.template.freqs
-        features = am.template.features
 
-        def sigma_matrix(self, parameters):
-            return am.template.sigma_matrix(parameters)
-
-    am.template = FakeAR()
+    am.template = FakeConvention(
+        coords=am.template.coords,
+        itd=am.template.itd,
+        ild=am.template.ild,
+        spectral_cues=am.template.spectral_cues,
+        freqs=am.template.freqs,
+    )
 
     with pytest.raises(ValueError, match='Convention mismatch'):
         am.infer()

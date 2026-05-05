@@ -58,9 +58,7 @@ nitpick_ignore = [
     ('py:class', 'pybads.BADS'),
     ('py:class', 'spharpy'),
     ('py:class', 'spaudiopy'),
-    # AuditoryRepresentation forward refs (via napoleon string parsing).
-    ('py:class', 'AuditoryRepresentation'),
-    ('py:class', 'Barumerli2025'),
+    ('py:class', 'Barumerli2023'),
     # Numpy-style shape annotations parsed as classes by napoleon.
     ('py:class', 'ndarray'),
     ('py:class', 'shape'),

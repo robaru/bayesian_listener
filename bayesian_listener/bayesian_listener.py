@@ -7,7 +7,7 @@ from scipy.special import logsumexp
 from bayesian_listener import utils
 from bayesian_listener import resample
 from bayesian_listener.auditory_representation import (
-    AuditoryRepresentation, Barumerli2025, CONVENTIONS)
+    _AuditoryRepresentation, Barumerli2023, CONVENTIONS)
 from pathlib import Path
 
 class BayesianListener:
@@ -223,15 +223,15 @@ class BayesianListener:
         """Auditory representation of the stimulus, or ``None`` if not computed.
 
         Set by :meth:`compute_target`.  Assigning a value validates that it is
-        an :class:`~bayesian_listener.auditory_representation.AuditoryRepresentation`
-        instance (or ``None``); otherwise raises :class:`TypeError`.
+        a :class:`~bayesian_listener.Barumerli2023` instance (or subclass, or
+        ``None``); otherwise raises :class:`TypeError`.
         """
         return self._target
 
     @target.setter
     def target(self, value):
-        if value is not None and not isinstance(value, AuditoryRepresentation):
-            raise TypeError('target must be an AuditoryRepresentation.')
+        if value is not None and not isinstance(value, _AuditoryRepresentation):
+            raise TypeError('target must be a Barumerli2023 (or subclass).')
         self._target = value
 
     @property
@@ -239,23 +239,23 @@ class BayesianListener:
         """Listener's internal template, or ``None`` if not computed.
 
         Set by :meth:`compute_template`.  Assigning a value validates that it is
-        an :class:`~bayesian_listener.auditory_representation.AuditoryRepresentation`
-        instance (or ``None``); otherwise raises :class:`TypeError`.
+        a :class:`~bayesian_listener.Barumerli2023` instance (or subclass, or
+        ``None``); otherwise raises :class:`TypeError`.
         """
         return self._template
 
     @template.setter
     def template(self, value):
-        if value is not None and not isinstance(value, AuditoryRepresentation):
-            raise TypeError('template must be an AuditoryRepresentation.')
+        if value is not None and not isinstance(value, _AuditoryRepresentation):
+            raise TypeError('template must be a Barumerli2023 (or subclass).')
         self._template = value
 
     def _interpolate(self, ar, interpolation='SHMAX', interpolation_grid=None):
-        """Resample an :class:`~bayesian_listener.auditory_representation.AuditoryRepresentation` onto a uniform grid.
+        """Resample a :class:`~bayesian_listener.Barumerli2023` onto a uniform grid.
 
         Parameters
         ----------
-        ar : AuditoryRepresentation
+        ar : Barumerli2023
             Source representation to interpolate.
         interpolation : {'SH', 'SHMAX', 'barycentric', 'barumerli2023'}, default='SHMAX'
             Interpolation method:
@@ -275,7 +275,7 @@ class BayesianListener:
 
         Returns
         -------
-        AuditoryRepresentation
+        Barumerli2023
             Same subclass as ``ar``, resampled onto the target grid.
         """
         cues_list = [
@@ -296,20 +296,19 @@ class BayesianListener:
             freqs=ar.freqs,
         )
 
-    def compute_target(self, convention='barumerli2025', spectral_range=None):
+    def compute_target(self, convention='Barumerli2023', spectral_range=None):
         """Compute the auditory representation of the stimulus from ``self.hrir``.
 
-        Sets :attr:`target` to a fresh
-        :class:`~bayesian_listener.auditory_representation.AuditoryRepresentation`
+        Sets :attr:`target` to a fresh :class:`~bayesian_listener.Barumerli2023`
         instance.  No interpolation is performed; rows of ``target.coords``
         match the measured HRTF directions one-to-one.
 
         Parameters
         ----------
-        convention : str, default='barumerli2025'
+        convention : str, default='Barumerli2023'
             Key into ``bayesian_listener.auditory_representation.CONVENTIONS``
             selecting the representation subclass.  Currently
-            ``'barumerli2025'`` (ITD + ILD + spectral amplitudes) is the only
+            ``'Barumerli2023'`` (ITD + ILD + spectral amplitudes) is the only
             implemented convention; ``'barumerli2023pge'`` is a stub.
         spectral_range : list of float or None, default=None
             ``[low_Hz, high_Hz]`` limits of the gammatone filterbank used for

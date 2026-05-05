@@ -59,6 +59,7 @@ nitpick_ignore = [
     ('py:class', 'spharpy'),
     ('py:class', 'spaudiopy'),
     ('py:class', 'Barumerli2023'),
+    ('py:class', 'bayesian_listener.auditory_representation._AuditoryRepresentation'),
     # Numpy-style shape annotations parsed as classes by napoleon.
     ('py:class', 'ndarray'),
     ('py:class', 'shape'),

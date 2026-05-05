@@ -379,7 +379,7 @@ def negloglik(model, targets, responses, resp_targets_idx, sigmas_log,
     model : :class:`~bayesian_listener.BayesianListener`
         Model instance whose ``parameters`` and ``target`` are overwritten
         in place.
-    targets : :class:`~bayesian_listener.auditory_representation.AuditoryRepresentation`
+    targets : :class:`~bayesian_listener.auditory_representation.Barumerli2023`
         Subset of the model template at the unique presented directions.
     responses : :class:`pyfar.Coordinates`
         Observed responses, shape ``(n_obs,)``.

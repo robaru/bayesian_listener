@@ -56,8 +56,12 @@ Visualisation
 Caching
 -------
 
-.. autofunction:: bayesian_listener.utils.save_to_cache
+.. autofunction:: bayesian_listener.utils.cache_load_target
 
-.. autofunction:: bayesian_listener.utils.load_from_cache
+.. autofunction:: bayesian_listener.utils.cache_load_template
+
+.. autofunction:: bayesian_listener.utils.cache_save_target
+
+.. autofunction:: bayesian_listener.utils.cache_save_template
 
 .. autofunction:: bayesian_listener.utils.clear_cache

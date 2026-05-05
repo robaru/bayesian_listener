@@ -223,7 +223,7 @@ class BayesianListener:
         """Auditory representation of the stimulus, or ``None`` if not computed.
 
         Set by :meth:`compute_target`.  Assigning a value validates that it is
-        a :class:`~bayesian_listener.Barumerli2023` instance (or subclass, or
+        a :class:`~bayesian_listener.auditory_representation.Barumerli2023` instance (or subclass, or
         ``None``); otherwise raises :class:`TypeError`.
         """
         return self._target
@@ -239,7 +239,7 @@ class BayesianListener:
         """Listener's internal template, or ``None`` if not computed.
 
         Set by :meth:`compute_template`.  Assigning a value validates that it is
-        a :class:`~bayesian_listener.Barumerli2023` instance (or subclass, or
+        a :class:`~bayesian_listener.auditory_representation.Barumerli2023` instance (or subclass, or
         ``None``); otherwise raises :class:`TypeError`.
         """
         return self._template
@@ -251,7 +251,7 @@ class BayesianListener:
         self._template = value
 
     def _interpolate(self, ar, interpolation='SHMAX', interpolation_grid=None):
-        """Resample a :class:`~bayesian_listener.Barumerli2023` onto a uniform grid.
+        """Resample a :class:`~bayesian_listener.auditory_representation.Barumerli2023` onto a uniform grid.
 
         Parameters
         ----------
@@ -300,7 +300,7 @@ class BayesianListener:
                        use_cache=True, force_recompute=False, cache_dir=None):
         """Compute the auditory representation of the stimulus from ``self.hrir``.
 
-        Sets :attr:`target` to a fresh :class:`~bayesian_listener.Barumerli2023`
+        Sets :attr:`target` to a fresh :class:`~bayesian_listener.auditory_representation.Barumerli2023`
         instance.  No interpolation is performed; rows of ``target.coords``
         match the measured HRTF directions one-to-one.  When a SOFA file path
         is known and ``use_cache=True``, the result is stored in an on-disk
@@ -382,7 +382,7 @@ class BayesianListener:
         Parameters
         ----------
         interpolation : {'SH', 'SHMAX', 'barycentric', 'barumerli2023'} or None, default='SHMAX'
-            Interpolation method; see :meth:`_interpolate` for details of each.
+            Interpolation method; ``'SH'``, ``'SHMAX'``, ``'barycentric'``, or ``'barumerli2023'``.
             Pass ``None`` to skip interpolation and set :attr:`template` equal
             to :attr:`target` (useful when the HRTF is already on a uniform
             grid, or for the non-individual workflow where only the target is

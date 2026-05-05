@@ -5,7 +5,7 @@ import numpy as np
 import pyfar as pf
 
 
-class AuditoryRepresentation(ABC):
+class _AuditoryRepresentation(ABC):
     """Abstract base for all auditory representations.
 
     Each subclass encapsulates a specific set of spatial cues
@@ -19,7 +19,7 @@ class AuditoryRepresentation(ABC):
     Attributes
     ----------
     convention : str
-        Short label identifying the representation, e.g. ``'barumerli2025'``.
+        Short label identifying the representation, e.g. ``'Barumerli2023'``.
     coords : :class:`pyfar.Coordinates`
         Source positions corresponding to the rows of :attr:`features`.
     freqs : :class:`numpy.ndarray`
@@ -30,7 +30,7 @@ class AuditoryRepresentation(ABC):
 
     See Also
     --------
-    Barumerli2025 : Concrete implementation with ITD + ILD + spectral envelope.
+    Barumerli2023 : Concrete implementation with ITD + ILD + spectral envelope.
     bayesian_listener.BayesianListener : Consumer of this representation.
     """
 
@@ -59,7 +59,7 @@ class AuditoryRepresentation(ABC):
 
 
 @dataclass
-class Barumerli2025(AuditoryRepresentation):
+class Barumerli2023(_AuditoryRepresentation):
     r"""ITD + ILD + spectral-amplitude representation of [barumerli2026]_.
 
     Builds the feature vector
@@ -72,7 +72,7 @@ class Barumerli2025(AuditoryRepresentation):
     Attributes
     ----------
     convention : str
-        Fixed to ``'barumerli2025'``.
+        Fixed to ``'Barumerli2023'``.
     coords : :class:`pyfar.Coordinates`
         Source positions, one per row.
     itd : :class:`numpy.ndarray`
@@ -97,13 +97,13 @@ class Barumerli2025(AuditoryRepresentation):
 
     >>> from bayesian_listener.utils import compute_features                # doctest: +SKIP
     >>> itd, ild, spec, freqs = compute_features(hrir, coords, fs)          # doctest: +SKIP
-    >>> repr_ = Barumerli2025(coords=coords, itd=itd, ild=ild,
+    >>> repr_ = Barumerli2023(coords=coords, itd=itd, ild=ild,
     ...                       spectral_cues=spec, freqs=freqs)              # doctest: +SKIP
     >>> repr_.features.shape[1] == 2 + 2 * freqs.size                       # doctest: +SKIP
     True
     """
 
-    convention: str = 'barumerli2025'
+    convention: str = 'Barumerli2023'
     coords: pf.Coordinates = None
     itd: np.ndarray = None
     ild: np.ndarray = None
@@ -118,7 +118,7 @@ class Barumerli2025(AuditoryRepresentation):
                                    self.spectral_cues[:, :, 1]])
 
     def __getitem__(self, idx):
-        """Return a new :class:`Barumerli2025` with the requested rows.
+        """Return a new :class:`Barumerli2023` with the requested rows.
 
         Used to subset a template to behavioural target directions before
         fitting (e.g. inside
@@ -126,7 +126,7 @@ class Barumerli2025(AuditoryRepresentation):
         """
         if isinstance(idx, (int, np.integer)):
             idx = [idx]
-        return Barumerli2025(
+        return Barumerli2023(
             coords=self.coords[idx],
             itd=self.itd[idx],
             ild=self.ild[idx],
@@ -169,7 +169,7 @@ class Barumerli2025(AuditoryRepresentation):
 
 
 @dataclass
-class Barumerli2023pge(AuditoryRepresentation):
+class Barumerli2023pge(_AuditoryRepresentation):
     """ITD + ILD + spectral-gradient representation — stub.
 
     .. warning::
@@ -194,6 +194,6 @@ class Barumerli2023pge(AuditoryRepresentation):
 
 
 CONVENTIONS = {
-    'barumerli2025': Barumerli2025,
+    'Barumerli2023': Barumerli2023,
     'barumerli2023pge': Barumerli2023pge,
 }

@@ -7,12 +7,11 @@ __email__ = 'r.barumerli@imperial.ac.uk'
 __version__ = '0.1'
 __all__ = [
     'BayesianListener',
-    'AuditoryRepresentation',
-    'Barumerli2025',
+    'Barumerli2023',
     ]
 
 from .bayesian_listener import BayesianListener
-from .auditory_representation import AuditoryRepresentation, Barumerli2025
+from .auditory_representation import Barumerli2023
 
 from . import metrics
 from . import resample

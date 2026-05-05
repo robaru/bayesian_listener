@@ -62,10 +62,10 @@ tests = [
 docs = [
     "sphinx",
     "autodocsumm>=0.2.14",
-    "pydata-sphinx-theme",
     "sphinx_mdinclude",
     "sphinx_copybutton",
     "sphinx-design",
+    "furo",
     "sphinx-favicon",
     "sphinx-reredirects",
 ]

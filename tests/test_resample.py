@@ -1,6 +1,5 @@
 import numpy as np
 import pyfar as pf
-import pytest
 from bayesian_listener.resample import resample_two_step, resample, find_max_order
 
 
@@ -42,7 +41,7 @@ def test_resample_two_step_custom_condition_threshold():
 
 
 def test_resample_barycentric():
-    """barycentric path runs and weights sum to 1 for each target."""
+    """Barycentric path runs and weights sum to 1 for each target."""
     cues, coords = make_grid()
     out, template = resample_two_step(cues, coords, None, 'barycentric')
     assert out.shape[1] == cues.shape[1]

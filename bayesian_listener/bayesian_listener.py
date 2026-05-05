@@ -7,7 +7,7 @@ from scipy.special import logsumexp
 from bayesian_listener import utils
 from bayesian_listener import resample
 from bayesian_listener.auditory_representation import (
-    _AuditoryRepresentation, Barumerli2023, CONVENTIONS)
+    _AuditoryRepresentation, CONVENTIONS)
 from pathlib import Path
 
 class BayesianListener:
@@ -63,7 +63,8 @@ class BayesianListener:
         sigma_spectral : float, default=10.4
             Monaural spectral noise :math:`\sigma_{\mathrm{mon}}` in dB
             (paper symbol ``sigma_mon``, Eq. 2 of [barumerli2023]_).  Fitted
-            in stage 2 of the procedure described in :func:`~bayesian_listener.fitting.fit_listener`.
+            in stage 2 of the procedure described in
+            :func:`~bayesian_listener.fitting.fit_listener`.
         sigma_prior : float, default=69.0
             Elevation prior width :math:`\sigma_{\mathrm{prior}}` in degrees
             (Eq. 5 of [barumerli2023]_).  Fitted in stage 2.  Group-average
@@ -223,8 +224,8 @@ class BayesianListener:
         """Auditory representation of the stimulus, or ``None`` if not computed.
 
         Set by :meth:`compute_target`.  Assigning a value validates that it is
-        a :class:`~bayesian_listener.auditory_representation.Barumerli2023` instance (or subclass, or
-        ``None``); otherwise raises :class:`TypeError`.
+        a :class:`~bayesian_listener.auditory_representation.Barumerli2023` instance
+        (or subclass, or ``None``); otherwise raises :class:`TypeError`.
         """
         return self._target
 
@@ -239,8 +240,8 @@ class BayesianListener:
         """Listener's internal template, or ``None`` if not computed.
 
         Set by :meth:`compute_template`.  Assigning a value validates that it is
-        a :class:`~bayesian_listener.auditory_representation.Barumerli2023` instance (or subclass, or
-        ``None``); otherwise raises :class:`TypeError`.
+        a :class:`~bayesian_listener.auditory_representation.Barumerli2023` instance
+        (or subclass, or ``None``); otherwise raises :class:`TypeError`.
         """
         return self._template
 
@@ -251,7 +252,8 @@ class BayesianListener:
         self._template = value
 
     def _interpolate(self, ar, interpolation='SHMAX', interpolation_grid=None):
-        """Resample a :class:`~bayesian_listener.auditory_representation.Barumerli2023` onto a uniform grid.
+        """Resample a :class:`~bayesian_listener.auditory_representation.Barumerli2023`
+        onto a uniform grid.
 
         Parameters
         ----------
@@ -300,7 +302,8 @@ class BayesianListener:
                        use_cache=True, force_recompute=False, cache_dir=None):
         """Compute the auditory representation of the stimulus from ``self.hrir``.
 
-        Sets :attr:`target` to a fresh :class:`~bayesian_listener.auditory_representation.Barumerli2023`
+        Sets :attr:`target` to a fresh
+        :class:`~bayesian_listener.auditory_representation.Barumerli2023`
         instance.  No interpolation is performed; rows of ``target.coords``
         match the measured HRTF directions one-to-one.  When a SOFA file path
         is known and ``use_cache=True``, the result is stored in an on-disk
@@ -598,16 +601,16 @@ class BayesianListener:
 
                 # the solution above is faster than the for loop below but I am
                 # keeping it for future reference and debugging
-                # post = np.zeros(template_num)
-                # for tp in range(template_num):
-                #     # post[tp] = multivariate_normal.pdf(
-                #     #     x,mean=template_feat[tp], cov=sigma) * prior[tp]
-                #     # doing this speeds up stuff
-                #     u_diff = (x-template_feat[tp])
-                #     post[tp] = (
-                #         np.exp(-0.5*u_diff @ sigma_inv @ u_diff.T))*prior[tp]
-                # post /= np.sum(post)
-                # logpost = np.log(post+np.finfo(post.dtype).eps)
+                # post = np.zeros(template_num)  # noqa: ERA001
+                # for tp in range(template_num):  # noqa: ERA001
+                #     # post[tp] = multivariate_normal.pdf(  # noqa: ERA001
+                #     #     x,mean=template_feat[tp], cov=sigma) * prior[tp]  # noqa: ERA001
+                #     # doing this speeds up stuff  # noqa: ERA001
+                #     u_diff = (x-template_feat[tp])  # noqa: ERA001
+                #     post[tp] = (  # noqa: ERA001
+                #         np.exp(-0.5*u_diff @ sigma_inv @ u_diff.T))*prior[tp]  # noqa: ERA001
+                # post /= np.sum(post)  # noqa: ERA001
+                # logpost = np.log(post+np.finfo(post.dtype).eps)  # noqa: ERA001
 
                 if store_posterior:
                     posterior[t, 0, :] = logpost
@@ -671,7 +674,7 @@ class BayesianListener:
 
         # Shape check: 2D = indices, 3D = full posterior
         if (posterior.ndim == 2):
-            # Shape: (trials, repetitions, 3)
+            # Shape: (trials, repetitions, 3)  # noqa: ERA001
             estimations = coords_temp[posterior]
         else:
             estimations = np.zeros((trials, repetitions, 3))

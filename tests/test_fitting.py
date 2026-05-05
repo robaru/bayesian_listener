@@ -29,7 +29,7 @@ def test_sigma_to_kappa_monotonic():
 
 
 def test_allcomb():
-    """allcomb should return the Cartesian product."""
+    """Allcomb should return the Cartesian product."""
     result = allcomb([1, 2], [3, 4])
     expected = np.array([[1, 3], [1, 4], [2, 3], [2, 4]])
     np.testing.assert_array_equal(result, expected)
@@ -108,7 +108,7 @@ def model_and_arrays(fitting_data):
 # ---------------------------------------------------------------------------
 
 def test_negloglik_returns_finite_scalar(model_and_arrays):
-    """negloglik should return a finite positive scalar for moderate kappa."""
+    """Negloglik should return a finite positive scalar for moderate kappa."""
     model, targets, resp_coords, resp_targets_idx = model_and_arrays
 
     sigmas_log = np.log([2.0, 8.0, 15.0, 30.0])
@@ -127,7 +127,7 @@ def test_negloglik_returns_finite_scalar(model_and_arrays):
     sigma_to_kappa(1), # extreme precision
 ])
 def test_negloglik_finite_across_kappa_range(model_and_arrays, kappa):
-    """negloglik must stay finite for kappa values spanning the full bound range."""
+    """Negloglik must stay finite for kappa values spanning the full bound range."""
     model, targets, resp_coords, resp_targets_idx = model_and_arrays
 
     sigmas_log = np.log([2.0, 8.0, kappa, 30.0])
@@ -178,7 +178,7 @@ def test_fit_listener_bounds_ordering(fitting_data):
 
     captured_args = {}
 
-    def capture_bads(fun, x0, lb, ub, plb, pub, **kwargs):
+    def capture_bads(_fun, _x0, lb, ub, plb, pub, **_kwargs):
         captured_args['lb'] = lb
         captured_args['plb'] = plb
         captured_args['pub'] = pub

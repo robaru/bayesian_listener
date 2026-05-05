@@ -380,7 +380,7 @@ def resample_barumerli2023(values,
                            coords_in,
                            template=None,
                            flag_regularisation = True):
-    """Resample with order-15 SH interpolation, as in [barumerli2023]_.
+    r"""Resample with order-15 SH interpolation, as in [barumerli2023]_.
 
     Single-step SH interpolation at order :math:`N = 15` with optional
     Tikhonov regularisation.  Retained for backward compatibility with the
@@ -481,9 +481,9 @@ def resample_barumerli2023(values,
 
     # remove bottom as done in AMT model
     # commented out otherwise fitting does not work
-    # idx = dirs[:, 2] > -.5
-    # dirs = dirs[idx, :]
-    # cues_out = [c[idx,:] for c in cues_out]
+    # idx = dirs[:, 2] > -.5  # noqa: ERA001
+    # dirs = dirs[idx, :]  # noqa: ERA001
+    # cues_out = [c[idx,:] for c in cues_out]  # noqa: ERA001
 
     # Return in same format as input
     if not passed_list:

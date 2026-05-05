@@ -8,7 +8,11 @@ __version__ = '0.1'
 __all__ = [
     'BayesianListener',
     'Barumerli2023',
-    ]
+    'metrics',
+    'resample',
+    'utils',
+    'fitting',
+]
 
 from .bayesian_listener import BayesianListener
 from .auditory_representation import Barumerli2023

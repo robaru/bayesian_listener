@@ -6,7 +6,7 @@ import pyfar as pf
 
 
 class _AuditoryRepresentation(ABC):
-    """Abstract base for all auditory representations.
+    r"""Abstract base for all auditory representations.
 
     Each subclass encapsulates a specific set of spatial cues
     (e.g. ITD, ILD, monaural spectra) and the diagonal covariance structure
@@ -187,9 +187,11 @@ class Barumerli2023pge(_AuditoryRepresentation):
     freqs: np.ndarray = None
 
     def __post_init__(self):
+        """Not implemented."""
         raise NotImplementedError('barumerli2023pge is not yet implemented.')
 
     def sigma_matrix(self, parameters: dict) -> np.ndarray:
+        """Not implemented."""
         raise NotImplementedError('barumerli2023pge is not yet implemented.')
 
 

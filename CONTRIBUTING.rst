@@ -60,13 +60,25 @@ Ready to contribute? Here's how to set up `bayesian_listener_package` for local 
 
    ruff must pass without any warnings for `./bayesian_listener` and `./tests` using the default or a stricter configuration. Ruff ignores a couple of PEP Errors (see `./pyproject.toml`). If necessary, adjust your linting configuration in your IDE accordingly.
 
-6. Commit your changes and push your branch to GitHub::
+6. If you changed docstrings or ``.rst`` files, build the docs locally to check
+   for warnings::
+
+    $ python -m sphinx -W --keep-going -b html docs docs/_build/html
+
+   This mirrors the CI build (``-W`` promotes warnings to errors). For a
+   quicker preview without strict warnings::
+
+    $ python -m sphinx -b html docs docs/_build/html
+
+   Then open ``docs/_build/html/index.html`` in a browser.
+
+8. Commit your changes and push your branch to GitHub::
 
     $ git add .
     $ git commit -m "Your detailed description of your changes."
     $ git push origin name-of-your-bugfix-or-feature
 
-7. Submit a pull request on the develop branch through the GitHub website.
+9. Submit a pull request on the develop branch through the GitHub website.
 
 
 

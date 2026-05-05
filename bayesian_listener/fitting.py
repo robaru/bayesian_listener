@@ -1,4 +1,4 @@
-"""Two-stage maximum-likelihood fitting of the Bayesian listener model.
+r"""Two-stage maximum-likelihood fitting of the Bayesian listener model.
 
 Implements the procedure of [barumerli2026]_, §2.2:
 
@@ -13,7 +13,6 @@ Implements the procedure of [barumerli2026]_, §2.2:
 The high-level wrapper :func:`fit_listener` runs both stages.
 """
 import numpy as np
-import sys
 from pathlib import Path
 import time
 from itertools import product
@@ -23,7 +22,6 @@ from scipy.optimize import minimize_scalar
 from scipy.optimize import brentq
 from bayesian_listener import BayesianListener
 import pyfar as pf
-from bayesian_listener.metrics import METRIC_FUNCTIONS
 
 def allcomb(*arrays):
     """Cartesian product of input arrays (equivalent to MATLAB ``allcomb``).
@@ -196,7 +194,7 @@ def sigma_to_kappa(sigma):
         if abs(R_est - R_target) < 1e-10:
             return kappa_init
 
-    # Solve: i1(kappa) / i0(kappa) - R_target = 0
+    # Solve: i1(kappa) / i0(kappa) - R_target = 0  # noqa: ERA001
     def objective(kappa):
         return _bessel_ratio(kappa) - R_target
 
@@ -352,7 +350,7 @@ def estimate_motor_noise(model, obs_tbl, targets_coords, subject_id=None,
         return {
             'sigma_motor': np.nan,
             'kappa_motor': np.nan,
-            'n_trials': int(np.sum(mask))
+            'n_trials': int(np.sum(mask)),
         }
 
     # Fit von Mises concentration
@@ -362,7 +360,7 @@ def estimate_motor_noise(model, obs_tbl, targets_coords, subject_id=None,
     return {
         'sigma_motor': sigma_motor,
         'kappa_motor': kappa_fit,
-        'n_trials': int(np.sum(mask))
+        'n_trials': int(np.sum(mask)),
     }
 
 def negloglik(model, targets, responses, resp_targets_idx, sigmas_log,
@@ -425,15 +423,15 @@ def negloglik(model, targets, responses, resp_targets_idx, sigmas_log,
         'sigma_ild': sigma_ild,
         'sigma_spectral': sigma_spectral,
         'sigma_prior': sigma_prior,
-        'kappa_motor': 0
+        'kappa_motor': 0,
     }
 
     # Run model WITHOUT motor noise to get MAP predictions
     model.target = targets
     posterior = model.infer(repetitions=num_exp)
 
-    # Get MAP estimates without motor noise
-    doa_estimations = model.estimate(posterior, kappa_motor=False).cartesian  # (n_targets x num_exp x 3)
+    # Get MAP estimates without motor noise; shape: (n_targets, num_exp, 3)
+    doa_estimations = model.estimate(posterior, kappa_motor=False).cartesian
 
     # von Mises-Fisher log-normalization constant (avoids sinh overflow)
     # log C = log(kappa / (4π sinh(kappa))) = log(kappa) - log(4π) - log(sinh(kappa))
@@ -467,7 +465,10 @@ def negloglik(model, targets, responses, resp_targets_idx, sigmas_log,
 
         # Average over MC samples using log-sum-exp trick for numerical stability
         max_log_pdfs = np.max(log_pdfs, axis=1, keepdims=True)  # (num_obs x 1)
-        log_mean_probs = max_log_pdfs.squeeze() + np.log(np.mean(np.exp(log_pdfs - max_log_pdfs), axis=1))
+        log_mean_probs = (
+            max_log_pdfs.squeeze()
+            + np.log(np.mean(np.exp(log_pdfs - max_log_pdfs), axis=1))
+        )
 
         # Accumulate log-likelihood across all observations
         loglik_total += np.sum(log_mean_probs)
@@ -484,7 +485,7 @@ DEFAULT_PARAMS = {
     'sigma_ild': 1.0,
     'sigma_spectral': 10.0,
     'kappa_motor': sigma_to_kappa(15.0),  # ~14.2 (from 15 deg via Bessel)
-    'sigma_prior': 40.0  # Still stored as sigma for model interface
+    'sigma_prior': 40.0,  # Still stored as sigma for model interface
 }
 
 # Bounds for fitting
@@ -496,7 +497,7 @@ PARAM_BOUNDS = {
     'sigma_spectral': {'lb': 0.1, 'plb': 1.0, 'pub': 10.0, 'ub': 50.0},
     'kappa_motor': {'lb': sigma_to_kappa(80.0), 'plb': sigma_to_kappa(40.0),
                     'pub': sigma_to_kappa(5.0), 'ub': sigma_to_kappa(2.0)},
-    'tau_prior': {'lb': 1.0/179.9**2, 'plb': 1.0/50.0**2, 'pub': 1.0/5.0**2, 'ub': 1.0/1.0**2}
+    'tau_prior': {'lb': 1.0/179.9**2, 'plb': 1.0/50.0**2, 'pub': 1.0/5.0**2, 'ub': 1.0/1.0**2},
 }
 
 
@@ -578,7 +579,7 @@ def fit_listener(sofa_path, obs_tbl, targets_coords,
             targets_coords=targets_coords,
             subject_id=subject_id,
             num_repetitions=num_repetitions_motor,
-            seed=motor_estimation_seed
+            seed=motor_estimation_seed,
         )
         t_motor = time.time() - t_motor_start
 
@@ -597,12 +598,12 @@ def fit_listener(sofa_path, obs_tbl, targets_coords,
             params_to_fit = ['sigma_spectral', 'sigma_prior']
             fixed_params = {
                 'kappa_motor': kappa_motor_est,
-                'sigma_ild': 1.0
+                'sigma_ild': 1.0,
             }
         else:
             params_to_fit = ['sigma_ild', 'sigma_spectral', 'sigma_prior']
             fixed_params = {
-                'kappa_motor': kappa_motor_est
+                'kappa_motor': kappa_motor_est,
             }
 
         # Call fit_listener_partial
@@ -616,7 +617,7 @@ def fit_listener(sofa_path, obs_tbl, targets_coords,
             subject_id=subject_id,
             num_repetitions=num_repetitions,
             num_grid_points=num_grid_points,
-            verbose=False  # We handle verbose output here
+            verbose=False,  # We handle verbose output here
         )
 
         # Add motor estimation info to results
@@ -644,7 +645,7 @@ def fit_listener(sofa_path, obs_tbl, targets_coords,
             'subject': label,
             'method': interpolation_method,
             'success': False,
-            'error': str(e)
+            'error': str(e),
         }
 
 
@@ -779,7 +780,6 @@ def fit_listener_partial(sofa_path, obs_tbl, targets_coords,
         def fll(x_log):
             """Likelihood function that maps fitted params to full param set."""
             # Start with fixed/default values
-            sigma_itd = all_params['sigma_itd']
             sigma_ild = all_params['sigma_ild']
             sigma_spectral = all_params['sigma_spectral']
             tau_prior = 1.0 / all_params['sigma_prior']**2  # Convert default sigma to tau
@@ -803,7 +803,7 @@ def fit_listener_partial(sofa_path, obs_tbl, targets_coords,
                 np.log(sigma_ild),
                 np.log(sigma_spectral),
                 np.log(kappa_motor),
-                np.log(tau_prior)
+                np.log(tau_prior),
             ])
 
             return negloglik(model, targets, resp_coords, resp_targets_idx, sigmas_log,
@@ -825,7 +825,10 @@ def fit_listener_partial(sofa_path, obs_tbl, targets_coords,
                 tau_grid_hi = 1.0 / 40.0**2
                 grid_arrays.append(np.log(np.linspace(tau_grid_lo, tau_grid_hi, n)))
 
-        grid_points = allcomb(*grid_arrays) if len(grid_arrays) > 1 else grid_arrays[0].reshape(-1, 1)
+        grid_points = (
+            allcomb(*grid_arrays) if len(grid_arrays) > 1
+            else grid_arrays[0].reshape(-1, 1)
+        )
 
         t_grid_start = time.time()
         nll = np.array([fll(grid_points[i]) for i in range(len(grid_points))])
@@ -860,7 +863,7 @@ def fit_listener_partial(sofa_path, obs_tbl, targets_coords,
         if verbose:
             print(f"  Final NLL: {result['fval']:.2f} ({t_bads:.1f}s)")
             print(f"  Total time: {t_total:.1f}s")
-            print(f"  Fitted parameters:")
+            print("  Fitted parameters:")
             for p in params_to_fit:
                 print(f"    {p}: {final_params[p]:.2f}")
 
@@ -880,7 +883,7 @@ def fit_listener_partial(sofa_path, obs_tbl, targets_coords,
             'time_bads': t_bads,
             'time_total': t_total,
             'n_trials': len(subj_data),
-            'success': True
+            'success': True,
         }
 
     except Exception as e:
@@ -890,6 +893,6 @@ def fit_listener_partial(sofa_path, obs_tbl, targets_coords,
             'method': interpolation_method,
             'params_fitted': params_to_fit,
             'success': False,
-            'error': str(e)
+            'error': str(e),
         }
 

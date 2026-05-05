@@ -2,7 +2,7 @@ import pytest
 
 
 def test_import_bayesian_listener():
-    """Test package import"""
+    """Test package import."""
     try:
         import bayesian_listener  # noqa
     except ImportError:
@@ -10,7 +10,7 @@ def test_import_bayesian_listener():
 
 
 def test_import_bayesian_listener_class():
-    """Test BayesianListener class import"""
+    """Test BayesianListener class import."""
     try:
         from bayesian_listener import BayesianListener  # noqa
     except ImportError:
@@ -18,7 +18,7 @@ def test_import_bayesian_listener_class():
 
 
 def test_import_metrics():
-    """Test import of the metrics module"""
+    """Test import of the metrics module."""
     try:
         from bayesian_listener import metrics  # noqa
     except ImportError:
@@ -26,7 +26,7 @@ def test_import_metrics():
 
 
 def test_import_resample():
-    """Test import of the resample module"""
+    """Test import of the resample module."""
     try:
         from bayesian_listener import resample  # noqa
     except ImportError:
@@ -34,7 +34,7 @@ def test_import_resample():
 
 
 def test_import_utils():
-    """Test import of the utils module"""
+    """Test import of the utils module."""
     try:
         from bayesian_listener import utils  # noqa
     except ImportError:

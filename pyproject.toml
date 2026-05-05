@@ -64,6 +64,7 @@ docs = [
     "autodocsumm>=0.2.14",
     "pydata-sphinx-theme",
     "sphinx_mdinclude",
+    "sphinx_copybutton",
     "sphinx-design",
     "sphinx-favicon",
     "sphinx-reredirects",

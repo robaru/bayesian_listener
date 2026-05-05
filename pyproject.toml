@@ -65,7 +65,7 @@ docs = [
     "sphinx_mdinclude",
     "sphinx_copybutton",
     "sphinx-design",
-    "furo",
+    "furo>=2024.5.6",
     "sphinx-favicon",
     "sphinx-reredirects",
 ]

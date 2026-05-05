@@ -6,7 +6,7 @@ from pathlib import Path
 import urllib.request
 from bayesian_listener import BayesianListener, Barumerli2023
 from bayesian_listener.auditory_representation import Barumerli2023pge
-from bayesian_listener.utils import save_to_cache, load_from_cache
+from bayesian_listener import utils
 
 
 def get_sofa_file():
@@ -41,7 +41,7 @@ def test_model_single():
     seed = 42
     sofa_file = get_sofa_file()
     am = BayesianListener(sofa_file)
-    am.prepare_features()
+    am.compute_template()
 
     am.target = am.target[260]
 
@@ -64,7 +64,7 @@ def test_model_multiple():
     """Test inference with two targets and two repetitions."""
     sofa_file = get_sofa_file()
     am = BayesianListener(sofa_file)
-    am.prepare_features()
+    am.compute_template()
 
     am.parameters = {
         'sigma_itd':      1e-1,
@@ -104,7 +104,7 @@ def test_interp():
     """Test SHMAX interpolation produces valid template features."""
     sofa_file = get_sofa_file()
     am = BayesianListener(sofa_file)
-    am.prepare_features()
+    am.compute_template()
 
     assert am.template is not None, 'Template should not be None'
     assert isinstance(am.template, Barumerli2023)
@@ -153,35 +153,31 @@ def test_sofa_object_no_sofa_data_attr():
     assert not hasattr(am_obj, 'sofa_data')
 
 
-def test_sofa_object_prepare_features():
-    """Test that prepare_features works with sofar.Sofa input (#32)."""
+def test_sofa_object_compute_template():
+    """Test that compute_template works with sofar.Sofa input (#32)."""
     sofa_file = get_sofa_file()
     sofa_data = sofar.read_sofa(sofa_file, verbose=False)
 
     am = BayesianListener(sofa_data)
-    am.prepare_features(use_cache=False)
+    am.compute_template(use_cache=False)
 
     assert am.target is not None
     assert am.template is not None
 
 
-def test_load_cached_data():
-    """Test that data can be saved to and loaded from the cache."""
+def test_cache_roundtrip(tmp_path):
+    """Test that compute_template caches target and template, and both reload."""
     sofa_file = get_sofa_file()
+    cache_dir = tmp_path / 'cache'
 
-    repo_root = Path(__file__).parent.parent
-    cache_dir = repo_root / 'data' / 'preprocessed'
+    am = BayesianListener(sofa_file)
+    am.compute_template(cache_dir=str(cache_dir))
 
-    if not cache_dir.exists() or not any(cache_dir.iterdir()):
-        pytest.skip('No pre-built cache found — skipping cache load test.')
+    target = utils.cache_load_target(cache_dir, sofa_file)
+    template = utils.cache_load_template(cache_dir, sofa_file, 'SHMAX')
 
-    loaded = load_from_cache(
-        cache_dir, sofa_file,
-        attributes_to_restore=['target', 'template'],
-        interpolation='SHMAX',
-    )
-
-    assert loaded is not None
+    assert target is not None
+    assert template is not None
 
 
 # -----------------------------------------------------------------------
@@ -216,13 +212,15 @@ def test_compute_template_sets_Barumerli2023():
     assert am.template.features.ndim == 2
 
 
-def test_compute_template_requires_target():
-    """compute_template() raises ValueError if called before compute_target()."""
+def test_compute_template_auto_computes_target():
+    """compute_template() auto-calls compute_target() when target is None."""
     sofa_file = get_sofa_file()
     am = BayesianListener(sofa_file)
 
-    with pytest.raises(ValueError, match='compute_target'):
-        am.compute_template()
+    am.compute_template(use_cache=False)
+
+    assert am.target is not None
+    assert am.template is not None
 
 
 def test_non_individual_workflow():
@@ -230,11 +228,11 @@ def test_non_individual_workflow():
     sofa_file = get_sofa_file()
 
     individual = BayesianListener(sofa_file)
-    individual.prepare_features()
+    individual.compute_template()
 
     # Same file stands in for a different HRTF
     foreign = BayesianListener(sofa_file)
-    foreign.prepare_features(compute_template=False)
+    foreign.compute_target()
 
     assert foreign.target is not None
     assert foreign.template is None
@@ -248,7 +246,7 @@ def test_convention_mismatch_raises():
     """infer() raises ValueError when target/template have different types."""
     sofa_file = get_sofa_file()
     am = BayesianListener(sofa_file)
-    am.prepare_features()
+    am.compute_template()
 
     class FakeConvention(Barumerli2023):
         convention = 'barumerli2023pge'

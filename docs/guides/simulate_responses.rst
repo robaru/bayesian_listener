@@ -22,7 +22,7 @@ motor noise sampling.
 Prepare features
 ----------------
 
-:meth:`~bayesian_listener.BayesianListener.prepare_features` computes ITD,
+:meth:`~bayesian_listener.BayesianListener.compute_template` computes ITD,
 ILD, and spectral cues from the HRTF and interpolates them onto a uniform
 spherical template grid.
 
@@ -31,7 +31,7 @@ spherical template grid.
    from bayesian_listener import BayesianListener
 
    listener = BayesianListener("P0001_FreeFieldCompMinPhase_48kHz.sofa")
-   listener.prepare_features(interpolation="SHMAX")
+   listener.compute_template(interpolation="SHMAX")
 
 Run inference
 -------------

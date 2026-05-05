@@ -695,198 +695,148 @@ def clear_cache(sofa_file=None):
         else:
             print("✓ No cache index found")
 
-def load_from_cache(cache_dir,
-                    sofa_file,
-                    attributes_to_restore,
-                    interpolation='SH'):
-    """Load cached preprocessed data for a SOFA file.
+# --- private cache helpers ---
 
-    The cache index pairs each pickle with the SOFA file's SHA256 hash and
-    the interpolation method, so a different HRTF revision or method
-    invalidates the cache automatically.
+def _cache_index_file(cache_dir):
+    return Path(cache_dir) / 'cache_index.csv'
 
-    Parameters
-    ----------
-    cache_dir : :class:`pathlib.Path` or str
-        Directory containing the cache index and pickle files.
-    sofa_file : str
-        Path to the SOFA file; used for hash and name matching.
-    attributes_to_restore : list of str
-        Attribute names that must be present in the pickled dict for the
-        cache to be considered valid.
-    interpolation : str, default='SH'
-        Interpolation method recorded with the cache entry.
 
-    Returns
-    -------
-    dict or None
-        Pickled attributes if a valid cache entry is found; ``None``
-        otherwise (no index, no matching entry, missing attributes, or
-        unpickling error).
-    """
+def _load_index(cache_dir):
+    idx = _cache_index_file(cache_dir)
+    if not idx.exists():
+        return pd.DataFrame(
+            columns=['sofa_name', 'file_hash', 'pkl_file', 'timestamp'])
+    return pd.read_csv(idx)
+
+
+def _save_index(cache_dir, df):
+    df.to_csv(_cache_index_file(cache_dir), index=False)
+
+
+def _find_index_row(df, sofa_name, file_hash):
+    match = df[(df['sofa_name'] == sofa_name) & (df['file_hash'] == file_hash)]
+    return match.iloc[0] if not match.empty else None
+
+
+def _write_pkl(pkl_path, data):
+    with open(pkl_path, 'wb') as f:
+        pickle.dump(data, f, protocol=pickle.HIGHEST_PROTOCOL)
+
+
+def _read_pkl(pkl_path):
+    with open(pkl_path, 'rb') as f:
+        return pickle.load(f)
+
+
+# --- public cache helpers ---
+# Each HRTF gets one pickle: {'target': ..., 'templates': {'SHMAX': ..., ...}}
+# The index has one row per HRTF (sofa_name + file_hash), no interpolation column.
+
+def cache_load_target(cache_dir, sofa_file):
+    """Load the cached target for a SOFA file, or ``None`` if not found."""
     cache_dir = Path(cache_dir)
-    cache_index_file = cache_dir / 'cache_index.csv'
-
-    if not cache_index_file.exists():
+    df = _load_index(cache_dir)
+    if df.empty:
         return None
-
     file_hash = _compute_file_hash(sofa_file)
-    sofa_name = Path(sofa_file).name
-
-    # Load cache index
-    cache_df = pd.read_csv(cache_index_file)
-
-    # Handle backward compatibility: add 'interpolation' column if missing
-    if 'interpolation' not in cache_df.columns:
-        # Assume old caches used default SH method
-        cache_df['interpolation'] = 'SH'
-
-    # Check for matching entry (including interpolation method)
-    match = cache_df[(cache_df['sofa_name'] == sofa_name) &
-                     (cache_df['file_hash'] == file_hash) &
-                     (cache_df['interpolation'] == interpolation)]
-
-    if match.empty:
+    row = _find_index_row(df, Path(sofa_file).name, file_hash)
+    if row is None:
         return None
-
-    pkl_file = cache_dir / match.iloc[0]['pkl_file']
-    if not pkl_file.exists():
+    pkl_path = cache_dir / row['pkl_file']
+    if not pkl_path.exists():
         return None
-
-    print(f"✓ Loading from cache: {pkl_file.name}")
     try:
-        with open(pkl_file, 'rb') as f:
-            cached_data = pickle.load(f)
-
-        # Validate that all required attributes are present
-        missing = [
-            attr for attr in attributes_to_restore if attr not in cached_data]
-        if missing:
-            print(f"⚠ Cache missing attributes: {missing}")
-            return None
-
-        print("✓ Cache loaded successfully")
-        return cached_data
-
-    except Exception as e:
-        print(f"⚠ Cache loading failed: {e}")
+        return _read_pkl(pkl_path).get('target')
+    except Exception:
         return None
 
-def save_to_cache(cache_dir, sofa_file, data_to_cache, interpolation='SH'):
-    """
-    Save data to cache with automatic indexing.
 
-    Parameters
-    ----------
-    cache_dir : Path or str
-        Directory to store cache files
-    sofa_file : str
-        Path to SOFA file (used for naming and indexing)
-    data_to_cache : dict
-        Dictionary of data to pickle
-    interpolation : str
-        Interpolation method used (e.g., 'SH', 'barumerli2023')
+def cache_load_template(cache_dir, sofa_file, interpolation):
+    """Load a cached template for a SOFA file and interpolation method, or ``None``."""
+    cache_dir = Path(cache_dir)
+    df = _load_index(cache_dir)
+    if df.empty:
+        return None
+    file_hash = _compute_file_hash(sofa_file)
+    row = _find_index_row(df, Path(sofa_file).name, file_hash)
+    if row is None:
+        return None
+    pkl_path = cache_dir / row['pkl_file']
+    if not pkl_path.exists():
+        return None
+    try:
+        return _read_pkl(pkl_path).get('templates', {}).get(interpolation)
+    except Exception:
+        return None
 
-    Returns
-    -------
-    bool
-        True if successful, False otherwise
-    """
+
+def cache_save_target(cache_dir, sofa_file, target):
+    """Save *target* to the HRTF pickle, creating the cache entry if needed."""
     cache_dir = Path(cache_dir)
     cache_dir.mkdir(parents=True, exist_ok=True)
-    cache_index_file = cache_dir / 'cache_index.csv'
-
+    df = _load_index(cache_dir)
     file_hash = _compute_file_hash(sofa_file)
     sofa_name = Path(sofa_file).name
-    timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+    row = _find_index_row(df, sofa_name, file_hash)
 
-    # Load existing cache index
-    if cache_index_file.exists():
-        cache_df = pd.read_csv(cache_index_file)
-        # Handle backward compatibility: add 'interpolation' column if missing
-        if 'interpolation' not in cache_df.columns:
-            # Assume old caches used default SH method
-            cache_df['interpolation'] = 'SH'
+    if row is not None:
+        pkl_path = cache_dir / row['pkl_file']
+        try:
+            data = _read_pkl(pkl_path)
+        except Exception:
+            data = {'templates': {}}
+        data['target'] = target
+        _write_pkl(pkl_path, data)
     else:
-        cache_df = pd.DataFrame(columns=[
-            'sofa_name',
-            'file_hash',
-            'interpolation',
-            'pkl_file',
-            'timestamp',
-            ])
+        timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+        pkl_filename = f"{Path(sofa_name).stem}_{file_hash[:8]}_{timestamp}.pkl"
+        pkl_path = cache_dir / pkl_filename
+        _write_pkl(pkl_path, {'target': target, 'templates': {}})
+        # Invalidate stale entries for the same SOFA name with a different hash.
+        stale = df[(df['sofa_name'] == sofa_name) & (df['file_hash'] != file_hash)]
+        for _, old_row in stale.iterrows():
+            old_file = cache_dir / old_row['pkl_file']
+            if old_file.exists():
+                old_file.unlink()
+        df = df[~((df['sofa_name'] == sofa_name) & (df['file_hash'] != file_hash))]
+        new_row = pd.DataFrame([{
+            'sofa_name': sofa_name, 'file_hash': file_hash,
+            'pkl_file': pkl_filename, 'timestamp': timestamp,
+        }])
+        df = pd.concat([df, new_row], ignore_index=True)
+        _save_index(cache_dir, df)
+    print(f"✓ Target cached: {pkl_path.name}")
 
-    # Check if entry already exists (same name, hash, and interpolation)
-    match = cache_df[(cache_df['sofa_name'] == sofa_name) &
-                     (cache_df['file_hash'] == file_hash) &
-                     (cache_df['interpolation'] == interpolation)]
 
-    # Create new pickle filename with interpolation method and timestamp
-    pkl_filename = (
-        f"{Path(sofa_name).stem}_{file_hash[:8]}"
-        f"_{interpolation}_{timestamp}.pkl"
-    )
+def cache_save_template(cache_dir, sofa_file, interpolation, template):
+    """Add *template* to the HRTF pickle under the given interpolation key."""
+    cache_dir = Path(cache_dir)
+    df = _load_index(cache_dir)
+    file_hash = _compute_file_hash(sofa_file)
+    sofa_name = Path(sofa_file).name
+    row = _find_index_row(df, sofa_name, file_hash)
 
-    pkl_path = cache_dir / pkl_filename
-
-    if not match.empty:
-        # Remove old pickle file
-        old_pkl_filename = match.iloc[0]['pkl_file']
-        old_pkl_path = cache_dir / old_pkl_filename
-        if old_pkl_path.exists():
-            old_pkl_path.unlink()
-            print(f"→ Removed old cache: {old_pkl_filename}")
-        print(f"→ Updating cache: {pkl_filename}")
+    if row is not None:
+        pkl_path = cache_dir / row['pkl_file']
+        try:
+            data = _read_pkl(pkl_path)
+        except Exception:
+            data = {'target': None, 'templates': {}}
+        data.setdefault('templates', {})[interpolation] = template
+        _write_pkl(pkl_path, data)
     else:
-        print(f"→ Saving to cache: {pkl_filename}")
-
-    try:
-        # Save new pickle file
-        with open(pkl_path, 'wb') as f:
-            pickle.dump(data_to_cache, f, protocol=pickle.HIGHEST_PROTOCOL)
-
-        if not match.empty:
-            # Update existing entry with new filename and timestamp
-            cache_df.loc[match.index[0], 'pkl_file'] = pkl_filename
-            cache_df.loc[match.index[0], 'timestamp'] = timestamp
-        else:
-            # Remove old entries for same file with different hash
-            # (but keep different interpolations)
-            old_entries = cache_df[
-                (cache_df['sofa_name'] == sofa_name) &
-                (cache_df['file_hash'] != file_hash) &
-                (cache_df['interpolation'] == interpolation)]
-
-            # Delete old pickle files with different hashes
-            for _, row in old_entries.iterrows():
-                old_file = cache_dir / row['pkl_file']
-                if old_file.exists():
-                    old_file.unlink()
-                    print(f"→ Removed outdated cache: {row['pkl_file']}")
-
-            # Remove old entries from dataframe
-            cache_df = cache_df[~(
-                (cache_df['sofa_name'] == sofa_name) &
-                (cache_df['file_hash'] != file_hash) &
-                (cache_df['interpolation'] == interpolation))]
-
-            # Add new entry
-            new_row = pd.DataFrame([{
-                'sofa_name': sofa_name,
-                'file_hash': file_hash,
-                'interpolation': interpolation,
-                'pkl_file': pkl_filename,
-                'timestamp': timestamp,
-            }])
-            cache_df = pd.concat([cache_df, new_row], ignore_index=True)
-
-        cache_df.to_csv(cache_index_file, index=False)
-        print("✓ Cache saved and index updated")
-        return True
-
-    except Exception as e:
-        print(f"⚠ Cache save failed: {e}")
-        return False
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+        pkl_filename = f"{Path(sofa_name).stem}_{file_hash[:8]}_{timestamp}.pkl"
+        pkl_path = cache_dir / pkl_filename
+        _write_pkl(pkl_path, {'target': None, 'templates': {interpolation: template}})
+        new_row = pd.DataFrame([{
+            'sofa_name': sofa_name, 'file_hash': file_hash,
+            'pkl_file': pkl_filename, 'timestamp': timestamp,
+        }])
+        df = pd.concat([df, new_row], ignore_index=True)
+        _save_index(cache_dir, df)
+    print(f"✓ Template '{interpolation}' cached: {pkl_path.name}")
 
 
 # -----------------------------------

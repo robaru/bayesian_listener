@@ -32,7 +32,7 @@ class BayesianListener:
 
     >>> from bayesian_listener import BayesianListener   # doctest: +SKIP
     >>> bl = BayesianListener('subject01.sofa')          # doctest: +SKIP
-    >>> bl.prepare_features(interpolation='SHMAX')       # doctest: +SKIP
+    >>> bl.compute_template(interpolation='SHMAX')       # doctest: +SKIP
     >>> posterior = bl.infer(repetitions=50, seed=0)     # doctest: +SKIP
     >>> response  = bl.estimate(posterior, seed=0)       # doctest: +SKIP
     """
@@ -50,7 +50,7 @@ class BayesianListener:
         sofa : str or :class:`sofar.Sofa`
             Path to a SOFA file or a pre-loaded :class:`sofar.Sofa` object.
             When a file path is given, it is stored as ``self.sofa_file`` and
-            used as a cache key by :meth:`prepare_features`.  When a
+            used as a cache key by :meth:`compute_template`.  When a
             :class:`sofar.Sofa` object is given, ``self.sofa_file`` is
             ``None`` and caching is disabled.
         sigma_itd : float, default=0.569
@@ -296,12 +296,15 @@ class BayesianListener:
             freqs=ar.freqs,
         )
 
-    def compute_target(self, convention='Barumerli2023', spectral_range=None):
+    def compute_target(self, convention='Barumerli2023', spectral_range=None,
+                       use_cache=True, force_recompute=False, cache_dir=None):
         """Compute the auditory representation of the stimulus from ``self.hrir``.
 
         Sets :attr:`target` to a fresh :class:`~bayesian_listener.Barumerli2023`
         instance.  No interpolation is performed; rows of ``target.coords``
-        match the measured HRTF directions one-to-one.
+        match the measured HRTF directions one-to-one.  When a SOFA file path
+        is known and ``use_cache=True``, the result is stored in an on-disk
+        pickle keyed by the file hash and reused on subsequent calls.
 
         Parameters
         ----------
@@ -313,6 +316,14 @@ class BayesianListener:
         spectral_range : list of float or None, default=None
             ``[low_Hz, high_Hz]`` limits of the gammatone filterbank used for
             the monaural cues.  ``None`` selects ``[700.0, 18000.0]``.
+        use_cache : bool, default=True
+            If ``True``, attempt to load a previously computed target from
+            ``cache_dir`` and save after computing.
+        force_recompute : bool, default=False
+            If ``True``, recompute even when a cache hit is found.
+        cache_dir : str or :class:`pathlib.Path` or None, default=None
+            Cache directory.  ``None`` selects
+            ``Path.cwd() / 'data' / 'preprocessed'``.
 
         Raises
         ------
@@ -332,6 +343,17 @@ class BayesianListener:
             raise ValueError(
                 f"Unknown convention '{convention}'. "
                 f"Available: {list(CONVENTIONS)}")
+        if cache_dir is None:
+            cache_dir = Path.cwd() / 'data' / 'preprocessed'
+        else:
+            cache_dir = Path(cache_dir)
+
+        if use_cache and not force_recompute and self.sofa_file is not None:
+            target = utils.cache_load_target(cache_dir, self.sofa_file)
+            if target is not None:
+                self.target = target
+                return
+
         itd, ild, spectral_cues, freqs = utils.compute_features(
             self.hrir, self.coords, self.fs, spectral_range)
         self.target = CONVENTIONS[convention](
@@ -342,120 +364,88 @@ class BayesianListener:
             freqs=freqs,
         )
 
-    def compute_template(self, interpolation='SHMAX', interpolation_grid=None):
+        if self.sofa_file is not None:
+            utils.cache_save_target(cache_dir, self.sofa_file, self.target)
+
+    def compute_template(self, interpolation='SHMAX', interpolation_grid=None,
+                         spectral_range=None, use_cache=True,
+                         force_recompute=False, cache_dir=None):
         """Interpolate :attr:`target` onto a quasi-uniform grid and store it as :attr:`template`.
 
-        Must be called after :meth:`compute_target`.  See :ref:`background_interpolation`
-        for the comparison of the four interpolation methods on dense
-        measurement grids.
+        If :attr:`target` has not been set, :meth:`compute_target` is called
+        automatically with matching ``spectral_range``, ``use_cache``, and
+        ``cache_dir`` arguments.  When a SOFA file path is known and
+        ``use_cache=True``, both target and template are cached in a single
+        per-HRTF pickle so that repeated calls (including with different
+        interpolation methods) skip the expensive gammatone filterbank step.
 
         Parameters
         ----------
-        interpolation : {'SH', 'SHMAX', 'barycentric', 'barumerli2023'}, default='SHMAX'
-            Interpolation method; see :meth:`compute_template` for details
-            of each.
+        interpolation : {'SH', 'SHMAX', 'barycentric', 'barumerli2023'} or None, default='SHMAX'
+            Interpolation method; see :meth:`_interpolate` for details of each.
+            Pass ``None`` to skip interpolation and set :attr:`template` equal
+            to :attr:`target` (useful when the HRTF is already on a uniform
+            grid, or for the non-individual workflow where only the target is
+            needed).
         interpolation_grid : :class:`pyfar.Coordinates` or None, default=None
             Target directions.  ``None`` selects a 64th-degree spherical
             t-design (2,112 directions, 4° average spacing).
-
-        Raises
-        ------
-        ValueError
-            If :attr:`target` is ``None`` (call :meth:`compute_target` first).
+        spectral_range : list of float or None, default=None
+            ``[low_Hz, high_Hz]`` forwarded to the auto :meth:`compute_target`
+            call when :attr:`target` is ``None``.
+        use_cache : bool, default=True
+            If ``True``, attempt to load previously computed features from
+            ``cache_dir`` and save after computing.
+        force_recompute : bool, default=False
+            If ``True``, recompute even when a cache hit is found.
+        cache_dir : str or :class:`pathlib.Path` or None, default=None
+            Cache directory.  ``None`` selects
+            ``Path.cwd() / 'data' / 'preprocessed'``.
 
         Examples
         --------
         >>> bl = BayesianListener('subject01.sofa')                  # doctest: +SKIP
-        >>> bl.compute_target()                                      # doctest: +SKIP
         >>> bl.compute_template(interpolation='SHMAX')               # doctest: +SKIP
         >>> bl.template.features.shape[0]                            # doctest: +SKIP
         2112
         """
-        if self.target is None:
-            raise ValueError(
-                'Call compute_target() before compute_template().')
-        self.template = self._interpolate(
-            self.target, interpolation, interpolation_grid)
+        if interpolation is None:
+            if self.target is None:
+                self.compute_target(spectral_range=spectral_range,
+                                    use_cache=use_cache,
+                                    force_recompute=force_recompute,
+                                    cache_dir=cache_dir)
+            self.template = self.target
+            return
 
-    def prepare_features(self,
-                         spectral_range=None,
-                         interpolation='SHMAX',
-                         interpolation_grid=None,
-                         use_cache=True,
-                         force_recompute=False,
-                         cache_dir=None,
-                         compute_template=True):
-        """Compute target and (optionally) template features, with on-disk caching.
-
-        Convenience wrapper that calls :meth:`compute_target` and then
-        :meth:`compute_template`.  When the SOFA file path is known and
-        ``use_cache=True``, results are pickled under ``cache_dir`` and reused
-        on subsequent calls keyed by file hash and interpolation method.
-
-        Parameters
-        ----------
-        spectral_range : list of float or None, default=None
-            ``[low_Hz, high_Hz]`` for the monaural filterbank.  ``None``
-            selects ``[700.0, 18000.0]``.
-        interpolation : {'SH', 'SHMAX', 'barycentric', 'barumerli2023'}, default='SHMAX'
-            Interpolation method forwarded to :meth:`compute_template`.
-        interpolation_grid : :class:`pyfar.Coordinates` or None, default=None
-            Target directions; ``None`` selects a 64th-degree spherical
-            t-design.
-        use_cache : bool, default=True
-            If ``True``, attempt to load previously computed features from
-            ``cache_dir``.
-        force_recompute : bool, default=False
-            If ``True``, recompute even when a cache hit is found.
-        cache_dir : str or :class:`pathlib.Path` or None, default=None
-            Directory for the pickle cache.  ``None`` selects
-            ``Path.cwd() / 'data' / 'preprocessed'``.
-        compute_template : bool, default=True
-            If ``False``, only :attr:`target` is populated; :attr:`template`
-            is left as ``None`` (used in non-individual localisation tasks).
-
-        Returns
-        -------
-        None
-            Modifies :attr:`target` and :attr:`template` in place.
-
-        Examples
-        --------
-        >>> bl = BayesianListener('subject01.sofa')                  # doctest: +SKIP
-        >>> bl.prepare_features(interpolation='SHMAX', use_cache=False)  # doctest: +SKIP
-        """
-        if spectral_range is None:
-            spectral_range = [7e2, 18e3]
         if cache_dir is None:
             cache_dir = Path.cwd() / 'data' / 'preprocessed'
         else:
             cache_dir = Path(cache_dir)
-        self.cache_dir = cache_dir
 
-        if use_cache and compute_template and not force_recompute \
-                and self.sofa_file is not None:
-            cached = utils.load_from_cache(
-                cache_dir, self.sofa_file,
-                ['target', 'template'], interpolation)
-            if cached is not None:
-                self.target = cached['target']
-                self.template = cached['template']
+        if use_cache and not force_recompute and self.sofa_file is not None:
+            template = utils.cache_load_template(
+                cache_dir, self.sofa_file, interpolation)
+            if template is not None:
+                self.template = template
+                if self.target is None:
+                    target = utils.cache_load_target(cache_dir, self.sofa_file)
+                    if target is not None:
+                        self.target = target
                 return
-            print('  Cache not found or invalid. Recomputing...')
 
-        print('→ Computing features...')
-        self.compute_target(spectral_range=spectral_range)
-        if compute_template:
-            self.compute_template(interpolation=interpolation,
-                                  interpolation_grid=interpolation_grid)
-        print('✓ Feature preparation complete')
+        if self.target is None:
+            self.compute_target(spectral_range=spectral_range,
+                                use_cache=use_cache,
+                                force_recompute=force_recompute,
+                                cache_dir=cache_dir)
 
-        if compute_template and self.sofa_file is not None:
-            utils.save_to_cache(
-                cache_dir, self.sofa_file,
-                {'target': self.target, 'template': self.template},
-                interpolation)
+        self.template = self._interpolate(
+            self.target, interpolation, interpolation_grid)
 
+        if self.sofa_file is not None:
+            utils.cache_save_template(
+                cache_dir, self.sofa_file, interpolation, self.template)
 
     def infer(self,
               repetitions=50,

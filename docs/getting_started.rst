@@ -30,8 +30,7 @@ Installation
 
 .. note::
 
-   Requires Python 3.10 or higher. The package integrates with the
-   `Auditory Modeling Toolbox (AMT) <https://www.amtoolbox.org/>`__ workflow.
+   Requires Python 3.10 or higher.
    For the statistical framework see :doc:`background`.
 
 Minimal working example
@@ -56,9 +55,9 @@ directions, and adds motor noise to produce simulated pointing responses.
    )
 
    listener = BayesianListener(sofa_path)
-   listener.prepare_features()               # extract features + build template
+   listener.compute_template()               # extract features + build template
 
-   posterior  = listener.infer(repetitions=50)   # Bayesian inference
+   posterior  = listener.infer(repetitions=10)   # Bayesian inference
    responses  = listener.estimate(posterior)     # add motor noise
 
    # responses is a pyfar.Coordinates object (azimuth, elevation, radius).
@@ -66,8 +65,8 @@ directions, and adds motor noise to produce simulated pointing responses.
 
 .. note::
 
-   :meth:`~bayesian_listener.BayesianListener.prepare_features` can take a few
-   minutes the first time; results are cached automatically so subsequent
+   :meth:`~bayesian_listener.BayesianListener.compute_template` can take a few
+   seconds the first time; results are cached automatically so subsequent
    calls return immediately.
 
 What to do next

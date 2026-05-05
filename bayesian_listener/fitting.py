@@ -253,7 +253,7 @@ def estimate_motor_noise(model, obs_tbl, targets_coords, subject_id=None,
     Parameters
     ----------
     model : :class:`~bayesian_listener.BayesianListener`
-        Model instance with :meth:`~bayesian_listener.BayesianListener.prepare_features`
+        Model instance with :meth:`~bayesian_listener.BayesianListener.compute_template`
         already called.
     obs_tbl : :class:`pandas.DataFrame`
         Behavioural observations with columns
@@ -525,7 +525,7 @@ def fit_listener(sofa_path, obs_tbl, targets_coords,
         Target directions presented in the experiment.
     interpolation_method : {'SH', 'SHMAX', 'barycentric', 'barumerli2023'}
         Forwarded to
-        :meth:`~bayesian_listener.BayesianListener.prepare_features`.
+        :meth:`~bayesian_listener.BayesianListener.compute_template`.
     subject_id : str or None, default=None
         Participant identifier.  ``None`` uses every row of ``obs_tbl``.
     num_repetitions : int, default=200
@@ -566,7 +566,7 @@ def fit_listener(sofa_path, obs_tbl, targets_coords,
     try:
         # Load HRTF and create model
         model = BayesianListener(sofa_path)
-        model.prepare_features(interpolation=interpolation_method)
+        model.compute_template(interpolation=interpolation_method)
 
         # Step 1: Estimate motor noise from ITD+ILD
         if verbose:
@@ -667,7 +667,7 @@ def fit_listener_partial(sofa_path, obs_tbl, targets_coords,
         Target directions presented in the experiment.
     interpolation_method : {'SH', 'SHMAX', 'barycentric', 'barumerli2023'}
         Forwarded to
-        :meth:`~bayesian_listener.BayesianListener.prepare_features`.
+        :meth:`~bayesian_listener.BayesianListener.compute_template`.
     params_to_fit : list of str
         Subset of free parameters to fit.  Valid entries:
 
@@ -738,7 +738,7 @@ def fit_listener_partial(sofa_path, obs_tbl, targets_coords,
 
         # Load HRTF and create model
         model = BayesianListener(sofa_path)
-        model.prepare_features(interpolation=interpolation_method)
+        model.compute_template(interpolation=interpolation_method)
 
         # Extract features as AuditoryRepresentation subset
         target_indices = model.coords.find_nearest(targets_coords)[0][0]

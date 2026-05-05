@@ -81,7 +81,7 @@ def model_and_arrays(fitting_data):
     sofa_path, obs_tbl, targets_coords = fitting_data
 
     model = BayesianListener(sofa_path)
-    model.prepare_features(interpolation='SH')
+    model.compute_template(interpolation='SH')
 
     target_indices = model.coords.find_nearest(targets_coords)[0][0]
     targets = model.target[target_indices]

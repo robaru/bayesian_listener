@@ -12,6 +12,7 @@ __all__ = [
     'resample',
     'utils',
     'fitting',
+    'plotting',
 ]
 
 from .bayesian_listener import BayesianListener
@@ -21,5 +22,6 @@ from . import metrics
 from . import resample
 from . import utils
 from . import fitting
+from . import plotting
 
 

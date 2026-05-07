@@ -6,7 +6,7 @@ Fitting
 Functions for maximum-likelihood parameter estimation.  The recommended
 entry point is :func:`~bayesian_listener.fitting.fit_listener`, which
 implements the full two-stage profile-likelihood procedure described in
-[barumerli2026]_.
+:footcite:t:`barumerli2026`.
 
 Two-stage fitting
 -----------------
@@ -30,3 +30,5 @@ constants ``bayesian_listener.fitting.DEFAULT_PARAMS`` and
 ``bayesian_listener.fitting.PARAM_BOUNDS``.  Consult the source via the
 :guilabel:`[source]` link on :func:`~bayesian_listener.fitting.fit_listener`
 for the exact values.
+
+.. footbibliography::

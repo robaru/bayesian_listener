@@ -55,19 +55,16 @@ directions, and adds motor noise to produce simulated pointing responses.
    )
 
    listener = BayesianListener(sofa_path)
-   listener.compute_template()               # extract features + build template
-
-   posterior  = listener.infer(repetitions=10)   # Bayesian inference
-   responses  = listener.estimate(posterior)     # add motor noise
+   responses = listener.localise(repetitions=10)
 
    # responses is a pyfar.Coordinates object (azimuth, elevation, radius).
    print(responses.spherical_elevation[:5])
 
 .. note::
 
-   :meth:`~bayesian_listener.BayesianListener.compute_template` can take a few
-   seconds the first time; results are cached automatically so subsequent
-   calls return immediately.
+   :meth:`~bayesian_listener.BayesianListener.localise` builds the template on
+   the first call (a few seconds); results are cached automatically so
+   subsequent calls return immediately.
 
 What to do next
 ---------------

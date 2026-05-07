@@ -5,13 +5,13 @@ Four interpolation methods are exposed via :func:`resample`:
 - ``'SH'``      — regularised spherical-harmonic (SH) interpolation at
   the maximum stable order for the input grid.
 - ``'SHMAX'``   — SH interpolation at fixed order 44 with Tikhonov
-  regularisation (Bau damping, [bau2022]_).
+  regularisation (Bau damping, :footcite:t:`bau2022`).
 - ``'barycentric'`` — VBAP weights on the convex hull of the sampling grid
   ([pulkki1997]_).
-- ``'barumerli2023'`` — order-15 SH interpolation from [barumerli2023]_;
+- ``'barumerli2023'`` — order-15 SH interpolation from :footcite:t:`barumerli2023`;
   retained for backward compatibility.
 
-Methods are compared on the SONICOM dataset in [barumerli2026]_, §2.5.
+Methods are compared on the SONICOM dataset in :footcite:t:`barumerli2026`, §2.5.
 """
 import numpy as np
 import spharpy as sy
@@ -64,7 +64,7 @@ def build_bau_damping(N):
 
     References
     ----------
-    [bau2022]_.
+    :footcite:t:`bau2022`.
     """
     num_coeffs = (N + 1) ** 2
     D = np.zeros((num_coeffs, num_coeffs))
@@ -93,8 +93,8 @@ def find_max_order(dirs,
         Sampling grid.
     condition_threshold : float, default=12.25
         Upper bound on :math:`\kappa(\mathbf{Y}^\top\mathbf{Y})`.  The default
-        follows [bau2022]_, equivalent to :math:`\kappa(\mathbf{Y}) < 3.5`
-        ([benhur2019]_).
+        follows :footcite:t:`bau2022`, equivalent to :math:`\kappa(\mathbf{Y}) < 3.5`
+        (:footcite:t:`benhur2019`).
     N_max : int, default=35
         Maximum SH order to test.
     regularised : bool, default=True
@@ -220,7 +220,7 @@ def complement_sampling(coordinates):
 
 # method from Fabian in test_resampling
 def resample_two_step(cues, coordinates, template, second_step, **kwargs):
-    """Resample localisation cues using the two-step procedure of [ahrens2012]_.
+    """Resample localisation cues using the two-step procedure of :footcite:t:`ahrens2012`.
 
     Stage 1: low-order SH extrapolation completes missing low-elevation
     directions by mirroring measured points across the horizontal plane
@@ -380,7 +380,7 @@ def resample_barumerli2023(values,
                            coords_in,
                            template=None,
                            flag_regularisation = True):
-    r"""Resample with order-15 SH interpolation, as in [barumerli2023]_.
+    r"""Resample with order-15 SH interpolation, as in :footcite:t:`barumerli2023`.
 
     Single-step SH interpolation at order :math:`N = 15` with optional
     Tikhonov regularisation.  Retained for backward compatibility with the

@@ -1,14 +1,14 @@
 r"""Two-stage maximum-likelihood fitting of the Bayesian listener model.
 
-Implements the procedure of [barumerli2026]_, §2.2:
+Implements the procedure of :footcite:t:`barumerli2026`, §2.2:
 
 1. **Stage 1 — motor noise.**  Estimate :math:`\\kappa_m` from a
-   restricted lateral-only likelihood (Eq. 12 of [barumerli2026]_) using
+   restricted lateral-only likelihood (Eq. 12 of :footcite:t:`barumerli2026`) using
    ITD+ILD cues only.  See :func:`estimate_motor_noise`, :func:`fit_kappa_ml`.
 2. **Stage 2 — spectral and prior noise.**  Hold :math:`\\hat{\\kappa}_m`
    fixed and jointly fit :math:`\\sigma_{\\mathrm{mon}}` and
    :math:`\\sigma_{\\mathrm{prior}}` to the full-sphere likelihood
-   (Eq. 13 of [barumerli2026]_) via BADS [acerbi2017]_.
+   (Eq. 13 of :footcite:t:`barumerli2026`) via BADS :footcite:t:`acerbi2017`.
 
 The high-level wrapper :func:`fit_listener` runs both stages.
 """
@@ -50,7 +50,7 @@ def allcomb(*arrays):
 def von_mises_loglik_mc(kappa, resp_lat, est_lat_mc):
     r"""Negative log-likelihood of a von Mises with Monte Carlo predictions.
 
-    Implements the lateral-only likelihood of Eq. 12 of [barumerli2026]_,
+    Implements the lateral-only likelihood of Eq. 12 of :footcite:t:`barumerli2026`,
     approximated by averaging the von Mises pdf over ``n_mc`` Monte Carlo
     samples per observation.
 
@@ -211,7 +211,7 @@ def estimate_motor_noise(model, obs_tbl, targets_coords, subject_id=None,
                          num_repetitions=200, seed=42):
     r"""Estimate motor noise from behavioural data using ITD + ILD cues only (Stage 1).
 
-    Implements Eq. 12 of [barumerli2026]_:
+    Implements Eq. 12 of :footcite:t:`barumerli2026`:
 
     1. Build ITD + ILD predictions from the model template (no spectral cues).
     2. Draw ``num_repetitions`` Monte Carlo lateral predictions per trial.
@@ -339,7 +339,8 @@ def estimate_motor_noise(model, obs_tbl, targets_coords, subject_id=None,
 
 def negloglik(model, targets, responses, resp_targets_idx, sigmas_log,
               num_repetitions=200):
-    r"""Negative full-sphere log-likelihood for BADS optimisation (Eq. 13 of [barumerli2026]_).
+    r"""Negative full-sphere log-likelihood for BADS optimisation
+    (Eq. 13 of :footcite:t:`barumerli2026`).
 
     For each observation, runs Monte Carlo inference with the supplied
     parameters, builds the von Mises–Fisher pdf around each MC prediction,
@@ -480,7 +481,7 @@ def fit_listener(sofa_path, obs_tbl, targets_coords,
                  num_repetitions=200, num_repetitions_motor=200,
                  num_grid_points=1, fix_sigma_ild=True,
                  motor_estimation_seed=42, verbose=True):
-    r"""Run the full two-stage fit recommended in [barumerli2026]_.
+    r"""Run the full two-stage fit recommended in :footcite:t:`barumerli2026`.
 
     1. Estimate :math:`\hat{\kappa}_m` (Eq. 12) via :func:`estimate_motor_noise`.
     2. Hold :math:`\hat{\kappa}_m` fixed and jointly fit

@@ -87,6 +87,12 @@ def localization_error(targets, estimations, metric,
     ...                            my_metric,
     ...                            threshold=0.1)               # doctest: +SKIP
     """
+    if isinstance(metric, list):
+        return {m: localization_error(targets, estimations, m,
+                                      auxiliary_output=auxiliary_output,
+                                      **kwargs)
+                for m in metric}
+
     # Accept only Coordinates instances
     if not isinstance(targets, pf.Coordinates) or \
        not isinstance(estimations, pf.Coordinates):
@@ -94,9 +100,10 @@ def localization_error(targets, estimations, metric,
             "Both targets and estimations must be " \
             "pyfar.Coordinates instances.")
 
-    if targets.cshape != estimations.cshape:
+    if estimations.cshape[:len(targets.cshape)] != targets.cshape:
         raise ValueError(
-            f"Shape mismatch: {targets.cshape} vs {estimations.cshape}")
+            f"Shape mismatch: targets {targets.cshape} is not a prefix of "
+            f"estimations {estimations.cshape}")
 
     # Case 1: metric is a custom function
     if callable(metric):
@@ -150,8 +157,15 @@ def localization_error(targets, estimations, metric,
     # so we only need a conversion if expected_unit is 'degrees'
     if expected_unit == 'degrees':
         # Only convert the angular components (rad, rad, m) → (deg, deg, m)
-        converted_tar[:, :2] = np.rad2deg(converted_tar[:, :2])
-        converted_est[:, :2] = np.rad2deg(converted_est[:, :2])
+        converted_tar[..., :2] = np.rad2deg(converted_tar[..., :2])
+        converted_est[..., :2] = np.rad2deg(converted_est[..., :2])
+
+    if converted_tar.shape != converted_est.shape:
+        extra = converted_est.shape[len(targets.cshape):-1]
+        converted_tar = np.broadcast_to(
+            converted_tar.reshape(*targets.cshape, *([1] * len(extra)), 3),
+            converted_est.shape,
+        )
 
     value, aux_out = \
         METRIC_FUNCTIONS[metric](converted_tar, converted_est, **kwargs)

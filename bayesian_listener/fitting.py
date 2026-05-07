@@ -47,32 +47,6 @@ def allcomb(*arrays):
     """
     return np.array(list(product(*arrays)))
 
-def wrap_to_pi(rad):
-    r"""Wrap angles to the interval :math:`[-\pi, \pi)`.
-
-    Parameters
-    ----------
-    rad : float or :class:`numpy.ndarray`
-        Angle(s) in radians.
-
-    Returns
-    -------
-    float or :class:`numpy.ndarray`
-        Wrapped angle(s), same shape as ``rad``.
-
-    Notes
-    -----
-    Functionally identical to :func:`bayesian_listener.metrics.wrap_to_pi`;
-    duplicated here so this module has no dependency on ``metrics``.
-
-    Examples
-    --------
-    >>> import numpy as np
-    >>> float(wrap_to_pi(np.pi + 0.1))    # doctest: +ELLIPSIS
-    -3.041592653...
-    """
-    return (rad + np.pi) % (2 * np.pi) - np.pi
-
 def von_mises_loglik_mc(kappa, resp_lat, est_lat_mc):
     r"""Negative log-likelihood of a von Mises with Monte Carlo predictions.
 

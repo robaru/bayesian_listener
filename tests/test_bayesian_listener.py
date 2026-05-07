@@ -99,6 +99,27 @@ def test_model_multiple():
             if angular_err_deg > tolerance_deg:
                 return False
 
+def test_model_localise():
+    """Test single target inference using localise method."""
+    seed = 42
+    sofa_file = get_sofa_file()
+    am = BayesianListener(sofa_file)
+    am.compute_template()
+
+    am.target = am.target[260]
+
+    estimation = am.localise(repetitions=1, seed=seed)
+
+    estimated_dir = np.rad2deg(estimation.spherical_elevation[..., 0:2])
+
+    assert isinstance(estimation, pf.Coordinates)
+    assert estimation.cartesian.shape == (1, 1, 3)
+    assert np.allclose(np.linalg.norm(estimation.cartesian[0, 0, :]),
+                       1.0, atol=0.1)
+
+    expected_dir_sph = np.array([[115.872366,  42.608186]])
+    np.testing.assert_allclose(
+        estimated_dir.squeeze(), expected_dir_sph.squeeze(), rtol=1e-2)
 
 def test_interp():
     """Test SHMAX interpolation produces valid template features."""

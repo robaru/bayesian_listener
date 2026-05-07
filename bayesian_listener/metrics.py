@@ -2,7 +2,7 @@
 
 Provides :func:`localization_error` as the unified entry point and a registry
 of standard metrics in the interaural-polar coordinate system following
-[middlebrooks1999]_: lateral RMS error (``sdL``, ``rmsL``), local polar RMS
+:footcite:t:`middlebrooks1999`: lateral RMS error (``sdL``, ``rmsL``), local polar RMS
 error (``rmsPmedianlocal``), quadrant-error rate (``querrMiddlebrooks``),
 lateral and polar bias (``accL_cutoff``, ``accP_cutoff``), and a great-circle
 angular error (``angular_error``).  New metrics can be added with the
@@ -354,7 +354,7 @@ def sdL(true, est):
     Returns the standard deviation (square root of variance) of the
     response–target lateral-angle difference, restricted to estimations whose
     lateral angle satisfies :math:`|\hat{\alpha}| \le 80^\circ`.  See
-    [middlebrooks1999]_ for the foundational definition.
+    :footcite:t:`middlebrooks1999` for the foundational definition.
 
     Parameters
     ----------
@@ -398,7 +398,7 @@ def sdL(true, est):
     ylabel="Lateral RMS error (rad)",
 )
 def rmsL(true, est):
-    r"""Lateral RMS error within :math:`\pm 60^\circ` lateral ([middlebrooks1999]_).
+    r"""Lateral RMS error within :math:`\pm 60^\circ` lateral (:footcite:t:`middlebrooks1999`).
 
     Parameters
     ----------
@@ -497,7 +497,7 @@ def accL_cutoff(true, est, cutoff=np.pi):
     ylabel="Elevation bias (rad)",
 )
 def accP_cutoff(true, est, cutoff=np.deg2rad(30)):
-    r"""Polar bias (mean signed error) within :math:`\pm` ``cutoff`` lateral ([middlebrooks1999]_).
+    r"""Polar bias (mean signed error) within :math:`\pm` ``cutoff`` lateral (:footcite:t:`middlebrooks1999`).
 
     Parameters
     ----------
@@ -547,7 +547,7 @@ def rmsPmedianlocal(true, est):
 
     Restricted to estimations with lateral angle :math:`|\hat{\alpha}| \le 30^\circ`
     and polar error :math:`|\Delta \beta| < 90^\circ`.  Definition follows
-    [middlebrooks1999]_.
+    :footcite:t:`middlebrooks1999`.
 
     Parameters
     ----------
@@ -610,7 +610,7 @@ def rmsPmedianlocal(true, est):
     },
 )
 def querrMiddlebrooks(true, est):
-    r"""Quadrant-error rate within :math:`\pm 30^\circ` lateral ([middlebrooks1999]_).
+    r"""Quadrant-error rate within :math:`\pm 30^\circ` lateral (:footcite:t:`middlebrooks1999`).
 
     Counts the fraction of central-band estimations whose polar error
     satisfies :math:`|\Delta \beta| \ge 90^\circ`.

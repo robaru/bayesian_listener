@@ -7,7 +7,7 @@ Four interpolation methods are exposed via :func:`resample`:
 - ``'SHMAX'``   — SH interpolation at fixed order 44 with Tikhonov
   regularisation (Bau damping, :footcite:t:`bau2022`).
 - ``'barycentric'`` — VBAP weights on the convex hull of the sampling grid
-  ([pulkki1997]_).
+  (:footcite:t:`pulkki1997`).
 - ``'barumerli2023'`` — order-15 SH interpolation from :footcite:t:`barumerli2023`;
   retained for backward compatibility.
 

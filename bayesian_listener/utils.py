@@ -304,7 +304,7 @@ def itdestimator(signals, fs=None):
 def scatter_von_mises(dirs, kappa, seed = None):
     r"""Perturb unit-direction vectors with von Mises–Fisher noise.
 
-    Implements Eq. 7 of [barumerli2023]_: each input direction is replaced
+    Implements Eq. 7 of :footcite:t:`barumerli2023`: each input direction is replaced
     by a sample from :math:`\mathrm{vMF}(\boldsymbol{\mu}_i, \kappa)`.
     The output preserves the input shape.
 
@@ -854,7 +854,7 @@ def print_memory_usage(label=""):
 def compute_features(hrir, coords, fs, spectral_range=[7e2, 18e3]):
     r"""Compute ITD, ILD, and monaural spectral cues from binaural HRIRs.
 
-    Implements the feature extraction of Eq. 1 of [barumerli2023]_:
+    Implements the feature extraction of Eq. 1 of :footcite:t:`barumerli2023`:
 
     1. Normalise HRIRs to the frontal direction.
     2. Estimate ITD via :func:`itdestimator` and apply the signed-log

@@ -17,7 +17,7 @@ pointer to the relevant API reference page.
 .. toctree::
    :maxdepth: 1
 
-   workflows
+   understand
    fit_model
    simulate_responses
    compare_interpolation

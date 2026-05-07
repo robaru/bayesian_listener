@@ -25,7 +25,12 @@ extensions = [
     'sphinx.ext.mathjax',
     'sphinx_copybutton',
     'sphinx_design',
+    'sphinxcontrib.bibtex',
 ]
+
+bibtex_bibfiles = ['refs.bib']
+bibtex_default_style = 'unsrt'
+bibtex_reference_style = 'author_year'
 
 source_suffix = {
     '.rst': 'restructuredtext',

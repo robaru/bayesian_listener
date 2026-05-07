@@ -12,8 +12,8 @@ from pathlib import Path
 class BayesianListener:
     """Bayesian model of human static sound localisation from HRTFs.
 
-    Implements the generative pipeline of [barumerli2023]_, validated and
-    extended in [barumerli2026]_:  noisy spatial features (ITD, ILD, monaural
+    Implements the generative pipeline of :footcite:t:`barumerli2023`, validated and
+    extended in :footcite:t:`barumerli2026`:  noisy spatial features (ITD, ILD, monaural
     spectra) are extracted from a binaural stimulus, compared against
     direction-labelled HRTF templates, combined with an elevation prior, and
     finally perturbed by motor noise to yield a directional response.
@@ -22,8 +22,8 @@ class BayesianListener:
 
     References
     ----------
-    .. [barumerli2023]_  Eqs. 1–7 (model formulation).
-    .. [barumerli2026]_  Eqs. 8–14 (likelihood, fitting, BIC).
+    .. :footcite:t:`barumerli2023`  Eqs. 1–7 (model formulation).
+    .. :footcite:t:`barumerli2026`  Eqs. 8–14 (likelihood, fitting, BIC).
 
     Examples
     --------
@@ -54,23 +54,23 @@ class BayesianListener:
             ``None`` and caching is disabled.
         sigma_itd : float, default=0.569
             ITD perceptual noise :math:`\sigma_{\mathrm{itd}}` (dimensionless,
-            applied to the warped ITD feature of Eq. 1, [barumerli2023]_).
+            applied to the warped ITD feature of Eq. 1, :footcite:t:`barumerli2023`).
             Fixed at the literature value during the two-stage fit.
         sigma_ild : float, default=1.0
             ILD perceptual noise :math:`\sigma_{\mathrm{ild}}` in dB.
             Fixed at the literature value during the two-stage fit.
         sigma_spectral : float, default=10.4
             Monaural spectral noise :math:`\sigma_{\mathrm{mon}}` in dB
-            (paper symbol ``sigma_mon``, Eq. 2 of [barumerli2023]_).  Fitted
+            (paper symbol ``sigma_mon``, Eq. 2 of :footcite:t:`barumerli2023`).  Fitted
             in stage 2 of the procedure described in
             :func:`~bayesian_listener.fitting.fit_listener`.
         sigma_prior : float, default=69.0
             Elevation prior width :math:`\sigma_{\mathrm{prior}}` in degrees
-            (Eq. 5 of [barumerli2023]_).  Fitted in stage 2.  Group-average
-            value from [barumerli2026]_, Table 1.
+            (Eq. 5 of :footcite:t:`barumerli2023`).  Fitted in stage 2.  Group-average
+            value from :footcite:t:`barumerli2026`, Table 1.
         kappa_motor : float, default=23.31
             Motor-noise concentration :math:`\kappa_m` of the von
-            Mises–Fisher response distribution (Eq. 7 of [barumerli2023]_).
+            Mises–Fisher response distribution (Eq. 7 of :footcite:t:`barumerli2023`).
             Convert to a circular standard deviation in degrees with
             :func:`~bayesian_listener.fitting.kappa_to_sigma`.
 
@@ -268,7 +268,7 @@ class BayesianListener:
               with Tikhonov regularisation.
             - ``'barycentric'`` — VBAP/barycentric weights on the convex hull
               of the sampling grid.
-            - ``'barumerli2023'`` — original method of [barumerli2023]_,
+            - ``'barumerli2023'`` — original method of :footcite:t:`barumerli2023`,
               order-15 SH; truncated below the lowest measured elevation.
         interpolation_grid : :class:`pyfar.Coordinates` or None, default=None
             Target grid.  If ``None``, uses a 64th-degree spherical t-design
@@ -299,11 +299,11 @@ class BayesianListener:
 
     def compute_target(self, convention='Barumerli2023', spectral_range=None,
                        use_cache=True, force_recompute=False, cache_dir=None):
-        """Extract auditory features from :attr:`hrir` and store them as :attr:`target`.
+        """Extract auditory features from ``self.hrir`` and store them as :attr:`target`.
 
         The target is the stimulus-side representation: ITD, ILD, and monaural
         spectral features computed at the measured HRTF directions.  Each row
-        of :attr:`target.coords` corresponds to one measured direction,
+        of ``target.coords`` corresponds to one measured direction,
         preserving the original HRTF measurement grid. No interpolation is applied.
 
         Call this method before :meth:`compute_template` when you need control
@@ -481,7 +481,7 @@ class BayesianListener:
         then compute the log-posterior
         :math:`p(\boldsymbol{\varphi} \mid \mathbf{t}) \propto
         p(\mathbf{t} \mid \boldsymbol{\varphi})\, p(\boldsymbol{\varphi})`
-        (Eq. 3 of [barumerli2023]_) over all template directions.
+        (Eq. 3 of :footcite:t:`barumerli2023`) over all template directions.
 
         Parameters
         ----------
@@ -492,7 +492,7 @@ class BayesianListener:
 
             - ``'uniform'`` — flat prior over template directions.
             - ``'horizontal'`` — Gaussian prior over elevation with width
-              :attr:`sigma_prior` (Eq. 5 of [barumerli2023]_).
+              :attr:`sigma_prior` (Eq. 5 of :footcite:t:`barumerli2023`).
             - array of shape ``(n_templates,)`` — custom unnormalised
               prior; normalised internally.
         store_posterior : bool, default=False
@@ -643,7 +643,7 @@ class BayesianListener:
 
         Selects the MAP template direction for each (trial, repetition) pair
         and perturbs it with isotropic motor noise drawn from
-        :math:`\mathrm{vMF}(\mathbf{0}, \kappa_m)` (Eq. 7 of [barumerli2023]_).
+        :math:`\mathrm{vMF}(\mathbf{0}, \kappa_m)` (Eq. 7 of :footcite:t:`barumerli2023`).
 
         Parameters
         ----------
@@ -729,7 +729,7 @@ class BayesianListener:
         ----------
         target : :class:`pyfar.Coordinates` or None, default=None
             Source directions to localise.  Must share the same convention as
-            :attr:`template`.  ``None`` reuses :attr:`self.target`, computing
+            :attr:`template`.  ``None`` reuses :attr:`target`, computing
             it via :meth:`compute_target` if not already set.
         repetitions : int or None, default=None
             Number of Monte Carlo trials passed to :meth:`infer`.

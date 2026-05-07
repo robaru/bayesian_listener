@@ -8,6 +8,8 @@ def plot_cues(bl: BayesianListener, title='', fig=None, ax=None, clim=None, elev
 
     Parameters
     ----------
+    bl : :class:`~bayesian_listener.BayesianListener`
+        Listener instance with :attr:`target` already set.
     title : str, default=''
         String appended to the default subplot title.
     fig : :class:`matplotlib.figure.Figure` or None, default=None
@@ -80,11 +82,13 @@ def plot_cues(bl: BayesianListener, title='', fig=None, ax=None, clim=None, elev
 
     return fig, ax
 
-def plot_post(self, posterior, estimations):
+def plot_post(bl: BayesianListener, posterior, estimations):
     """Plot the posterior distribution on the sphere with response overlay.
 
     Parameters
     ----------
+    bl : :class:`~bayesian_listener.BayesianListener`
+        Listener instance with :attr:`template` already set.
     posterior : :class:`numpy.ndarray`
         Log-posterior of shape ``(n_templates,)``, e.g. one slice of
         :meth:`infer` output with ``store_posterior=True``.
@@ -99,7 +103,7 @@ def plot_post(self, posterior, estimations):
     """
     amps = posterior.squeeze()
 
-    ax = self.template.coords.show(
+    ax = bl.template.coords.show(
             c=np.maximum(amps, np.log(np.finfo(amps.dtype).eps)),
             s=20,
             alpha=.5,

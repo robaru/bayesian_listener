@@ -18,7 +18,9 @@ Barumerli2023
 -------------
 
 The concrete representation used by the default workflow: ITD + ILD +
-monaural spectral amplitude envelopes ([barumerli2026]_).
+monaural spectral amplitude envelopes (:footcite:t:`barumerli2026`).
 
 .. autoclass:: bayesian_listener.Barumerli2023
    :members:
+
+.. footbibliography::

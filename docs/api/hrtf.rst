@@ -65,3 +65,5 @@ Caching
 .. autofunction:: bayesian_listener.utils.cache_save_template
 
 .. autofunction:: bayesian_listener.utils.clear_cache
+
+.. footbibliography::

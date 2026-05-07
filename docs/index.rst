@@ -38,7 +38,7 @@ bayesian_listener
 :mod:`bayesian_listener` simulates and fits a Bayesian model of human sound
 localisation from individual head-related transfer functions (HRTFs).
 It is the open-source Python implementation of the model introduced in
-[barumerli2023]_ and statistically validated in [barumerli2026]_; see
+:footcite:t:`barumerli2023` and statistically validated in :footcite:t:`barumerli2026`; see
 :ref:`background` for the equations, parameter table, and known limitations.
 
 .. grid:: 2
@@ -78,16 +78,4 @@ Citing this work
 If you use :mod:`bayesian_listener` in your research, please cite the
 original model paper:
 
-.. code-block:: bibtex
-
-   @article{barumerli2023,
-     author  = {Barumerli, Roberto and Majdak, Piotr and Geronazzo, Michele
-                and Meijer, Demi and Avanzini, Federico and Baumgartner, Robert},
-     title   = {A {Bayesian} model for human directional localization of
-                broadband static sound sources},
-     journal = {Acta Acustica},
-     volume  = {7},
-     pages   = {12},
-     year    = {2023},
-     doi     = {10.1051/aacus/2023006},
-   }
+.. footbibliography::

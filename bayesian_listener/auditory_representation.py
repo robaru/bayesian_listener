@@ -11,7 +11,7 @@ class _AuditoryRepresentation(ABC):
     Each subclass encapsulates a specific set of spatial cues
     (e.g. ITD, ILD, monaural spectra) and the diagonal covariance structure
     :math:`\\boldsymbol{\\Sigma}` used in the Gaussian sensory likelihood
-    (Eq. 2 of [barumerli2023]_).  The feature matrix is concatenated once
+    (Eq. 2 of :footcite:t:`barumerli2023`).  The feature matrix is concatenated once
     at construction and stored as :attr:`features`, so that
     :meth:`~bayesian_listener.BayesianListener.infer` can compare target and
     template features by simple matrix algebra.
@@ -60,12 +60,12 @@ class _AuditoryRepresentation(ABC):
 
 @dataclass
 class Barumerli2023(_AuditoryRepresentation):
-    r"""ITD + ILD + spectral-amplitude representation of [barumerli2026]_.
+    r"""ITD + ILD + spectral-amplitude representation of :footcite:t:`barumerli2026`.
 
     Builds the feature vector
     :math:`\mathbf{t} = [x_{\mathrm{itd}}, x_{\mathrm{ild}},
     \mathbf{x}_{L,\mathrm{mon}}, \mathbf{x}_{R,\mathrm{mon}}]`
-    (Eq. 1 of [barumerli2023]_) with monaural cues as gammatone-bank
+    (Eq. 1 of :footcite:t:`barumerli2023`) with monaural cues as gammatone-bank
     log-amplitudes.  ``n_features = 2 + 2 * n_freqs`` where ``n_freqs`` is
     typically 28 (ERB-spaced centre frequencies between 700 Hz and 18 kHz).
 
@@ -135,7 +135,7 @@ class Barumerli2023(_AuditoryRepresentation):
         )
 
     def sigma_matrix(self, parameters: dict) -> np.ndarray:
-        r"""Diagonal sensory covariance (Eq. 2 of [barumerli2023]_).
+        r"""Diagonal sensory covariance (Eq. 2 of :footcite:t:`barumerli2023`).
 
         Builds
         :math:`\boldsymbol{\Sigma} = \mathrm{diag}(

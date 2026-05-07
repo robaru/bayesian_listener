@@ -497,7 +497,8 @@ def accL_cutoff(true, est, cutoff=np.pi):
     ylabel="Elevation bias (rad)",
 )
 def accP_cutoff(true, est, cutoff=np.deg2rad(30)):
-    r"""Polar bias (mean signed error) within :math:`\pm` ``cutoff`` lateral (:footcite:t:`middlebrooks1999`).
+    r"""Polar bias (mean signed error) within :math:`\pm` ``cutoff``
+      lateral (:footcite:t:`middlebrooks1999`).
 
     Parameters
     ----------

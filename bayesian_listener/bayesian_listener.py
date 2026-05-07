@@ -299,30 +299,34 @@ class BayesianListener:
 
     def compute_target(self, convention='Barumerli2023', spectral_range=None,
                        use_cache=True, force_recompute=False, cache_dir=None):
-        """Compute the auditory representation of the stimulus from ``self.hrir``.
+        """Extract auditory features from :attr:`hrir` and store them as :attr:`target`.
 
-        Sets :attr:`target` to a fresh
-        :class:`~bayesian_listener.auditory_representation.Barumerli2023`
-        instance.  No interpolation is performed; rows of ``target.coords``
-        match the measured HRTF directions one-to-one.  When a SOFA file path
-        is known and ``use_cache=True``, the result is stored in an on-disk
-        pickle keyed by the file hash and reused on subsequent calls.
+        The target is the stimulus-side representation: ITD, ILD, and monaural
+        spectral features computed at the measured HRTF directions.  Each row
+        of :attr:`target.coords` corresponds to one measured direction,
+        preserving the original HRTF measurement grid. No interpolation is applied.
+
+        Call this method before :meth:`compute_template` when you need control
+        over feature extraction parameters such as ``spectral_range`` or
+        ``convention``.  If :attr:`target` is already set when
+        :meth:`compute_template` is called, it will not be recomputed.
+        Caching is available only when the listener was initialised with a SOFA
+        file path; it is automatically disabled otherwise.
 
         Parameters
         ----------
         convention : str, default='Barumerli2023'
-            Key into ``bayesian_listener.auditory_representation.CONVENTIONS``
-            selecting the representation subclass.  Currently
-            ``'Barumerli2023'`` (ITD + ILD + spectral amplitudes) is the only
-            implemented convention; ``'barumerli2023pge'`` is a stub.
+            Auditory representation to use.  Must be a key in
+            ``bayesian_listener.auditory_representation.CONVENTIONS``.
+            Currently ``'Barumerli2023'`` (ITD + ILD + spectral amplitudes) is
+            the only fully implemented convention.
         spectral_range : list of float or None, default=None
-            ``[low_Hz, high_Hz]`` limits of the gammatone filterbank used for
-            the monaural cues.  ``None`` selects ``[700.0, 18000.0]``.
+            ``[low_Hz, high_Hz]`` frequency limits of the gammatone filterbank
+            used for the monaural cues.  ``None`` selects ``[700.0, 18000.0]``.
         use_cache : bool, default=True
-            If ``True``, attempt to load a previously computed target from
-            ``cache_dir`` and save after computing.
+            Load from cache if available and save after computing.
         force_recompute : bool, default=False
-            If ``True``, recompute even when a cache hit is found.
+            If ``True``, ignore any cached target and recompute from scratch.
         cache_dir : str or :class:`pathlib.Path` or None, default=None
             Cache directory.  ``None`` selects
             ``Path.cwd() / 'data' / 'preprocessed'``.
@@ -330,7 +334,9 @@ class BayesianListener:
         Raises
         ------
         ValueError
-            If ``convention`` is not a registered convention key.
+            If ``convention`` is not a registered key, or if ``sofa_file`` is
+            ``None`` (listener was initialised with a :class:`sofar.Sofa`
+            object rather than a file path).
 
         Examples
         --------
@@ -339,6 +345,10 @@ class BayesianListener:
         >>> bl.target.features.shape                          # doctest: +SKIP
         (793, 58)
         """
+        if use_cache and self.sofa_file is None:
+            use_cache = False
+            UserWarning('Caching disabled since sofa file path unavailable')
+
         if spectral_range is None:
             spectral_range = [7e2, 18e3]
         if convention not in CONVENTIONS:
@@ -350,7 +360,7 @@ class BayesianListener:
         else:
             cache_dir = Path(cache_dir)
 
-        if use_cache and not force_recompute and self.sofa_file is not None:
+        if use_cache and not force_recompute:
             target = utils.cache_load_target(cache_dir, self.sofa_file)
             if target is not None:
                 self.target = target
@@ -366,43 +376,51 @@ class BayesianListener:
             freqs=freqs,
         )
 
-        if self.sofa_file is not None:
+        if use_cache:
             utils.cache_save_target(cache_dir, self.sofa_file, self.target)
 
     def compute_template(self, interpolation='SHMAX', interpolation_grid=None,
-                         spectral_range=None, use_cache=True,
-                         force_recompute=False, cache_dir=None):
-        """Interpolate :attr:`target` onto a quasi-uniform grid and store it as :attr:`template`.
+                         use_cache=True, force_recompute=False, cache_dir=None):
+        """Build the template: the listener's learned mapping from features to directions.
+
+        The template is constructed from the individual HRTF by extracting
+        auditory features and interpolating them onto a quasi-uniform spherical
+        grid (default: 2,112 directions at ~4° spacing).  It represents the
+        internal model the listener uses to infer source directions during
+        :meth:`infer`.
 
         If :attr:`target` has not been set, :meth:`compute_target` is called
-        automatically with matching ``spectral_range``, ``use_cache``, and
-        ``cache_dir`` arguments.  When a SOFA file path is known and
-        ``use_cache=True``, both target and template are cached in a single
-        per-HRTF pickle so that repeated calls (including with different
-        interpolation methods) skip the expensive gammatone filterbank step.
+        automatically with default parameters.  For finer control over feature
+        extraction (e.g. spectral range, convention), call :meth:`compute_target`
+        explicitly before calling this method.
+
+        This function does not modify :attr:`target` if already set.
+        Caching is available only when the listener was initialised with a SOFA
+        file path; it is automatically disabled otherwise.
 
         Parameters
         ----------
         interpolation : {'SH', 'SHMAX', 'barycentric', 'barumerli2023'} or None, default='SHMAX'
-            Interpolation method; ``'SH'``, ``'SHMAX'``, ``'barycentric'``, or ``'barumerli2023'``.
+            Interpolation method used to resample features onto the uniform grid.
             Pass ``None`` to skip interpolation and set :attr:`template` equal
-            to :attr:`target` (useful when the HRTF is already on a uniform
-            grid, or for the non-individual workflow where only the target is
-            needed).
+            to :attr:`target` (useful when the HRTF is already on a uniform grid).
         interpolation_grid : :class:`pyfar.Coordinates` or None, default=None
-            Target directions.  ``None`` selects a 64th-degree spherical
-            t-design (2,112 directions, 4° average spacing).
-        spectral_range : list of float or None, default=None
-            ``[low_Hz, high_Hz]`` forwarded to the auto :meth:`compute_target`
-            call when :attr:`target` is ``None``.
+            Directions of the template grid.  ``None`` selects a 64th-degree
+            spherical t-design (2,112 directions, ~4° average spacing).
         use_cache : bool, default=True
-            If ``True``, attempt to load previously computed features from
-            ``cache_dir`` and save after computing.
+            Load from cache if available and save after computing.  Requires a
+            SOFA file path; raises :class:`ValueError` if ``sofa_file`` is ``None``.
         force_recompute : bool, default=False
-            If ``True``, recompute even when a cache hit is found.
+            If ``True``, ignore any cached template and recompute from scratch.
         cache_dir : str or :class:`pathlib.Path` or None, default=None
             Cache directory.  ``None`` selects
             ``Path.cwd() / 'data' / 'preprocessed'``.
+
+        Raises
+        ------
+        ValueError
+            If ``sofa_file`` is ``None`` (i.e. listener was initialised with a
+            :class:`sofar.Sofa` object rather than a file path).
 
         Examples
         --------
@@ -410,42 +428,43 @@ class BayesianListener:
         >>> bl.compute_template(interpolation='SHMAX')               # doctest: +SKIP
         >>> bl.template.features.shape[0]                            # doctest: +SKIP
         2112
+
+        To control feature extraction before building the template:
+
+        >>> bl.compute_target(spectral_range=[500, 16000])           # doctest: +SKIP
+        >>> bl.compute_template()                                     # doctest: +SKIP
         """
-        if interpolation is None:
-            if self.target is None:
-                self.compute_target(spectral_range=spectral_range,
-                                    use_cache=use_cache,
-                                    force_recompute=force_recompute,
-                                    cache_dir=cache_dir)
-            self.template = self.target
-            return
+        if use_cache and self.sofa_file is None:
+            use_cache = False
+            UserWarning('Caching disabled since sofa file path unavailable')
 
         if cache_dir is None:
             cache_dir = Path.cwd() / 'data' / 'preprocessed'
         else:
             cache_dir = Path(cache_dir)
 
-        if use_cache and not force_recompute and self.sofa_file is not None:
+        # step 1: ensure target is available without modifying it if already set
+        if self.target is None:
+            self.compute_target(use_cache=use_cache,
+                                cache_dir=cache_dir)
+
+        # step 2: if no interpolation, template == target
+        if interpolation is None:
+            self.template = self.target
+            return
+
+        # step 3: try cache, else interpolate and cache
+        if use_cache and not force_recompute:
             template = utils.cache_load_template(
                 cache_dir, self.sofa_file, interpolation)
             if template is not None:
                 self.template = template
-                if self.target is None:
-                    target = utils.cache_load_target(cache_dir, self.sofa_file)
-                    if target is not None:
-                        self.target = target
                 return
-
-        if self.target is None:
-            self.compute_target(spectral_range=spectral_range,
-                                use_cache=use_cache,
-                                force_recompute=force_recompute,
-                                cache_dir=cache_dir)
 
         self.template = self._interpolate(
             self.target, interpolation, interpolation_grid)
 
-        if self.sofa_file is not None:
+        if use_cache:
             utils.cache_save_template(
                 cache_dir, self.sofa_file, interpolation, self.template)
 
@@ -600,16 +619,16 @@ class BayesianListener:
 
                 # the solution above is faster than the for loop below but I am
                 # keeping it for future reference and debugging
-                # post = np.zeros(template_num)  # noqa: ERA001
-                # for tp in range(template_num):  # noqa: ERA001
-                #     # post[tp] = multivariate_normal.pdf(  # noqa: ERA001
-                #     #     x,mean=template_feat[tp], cov=sigma) * prior[tp]  # noqa: ERA001
-                #     # doing this speeds up stuff  # noqa: ERA001
-                #     u_diff = (x-template_feat[tp])  # noqa: ERA001
-                #     post[tp] = (  # noqa: ERA001
-                #         np.exp(-0.5*u_diff @ sigma_inv @ u_diff.T))*prior[tp]  # noqa: ERA001
-                # post /= np.sum(post)  # noqa: ERA001
-                # logpost = np.log(post+np.finfo(post.dtype).eps)  # noqa: ERA001
+                # post = np.zeros(template_num)                                 # noqa: ERA001
+                # for tp in range(template_num):                                # noqa: ERA001
+                #     # post[tp] = multivariate_normal.pdf(                     # noqa: ERA001
+                #     #     x,mean=template_feat[tp], cov=sigma) * prior[tp]    # noqa: ERA001
+                #     # doing this speeds up stuff                              # noqa: ERA001
+                #     u_diff = (x-template_feat[tp])                            # noqa: ERA001
+                #     post[tp] = (                                              # noqa: ERA001
+                #         np.exp(-0.5*u_diff @ sigma_inv @ u_diff.T))*prior[tp] # noqa: ERA001
+                # post /= np.sum(post)                                          # noqa: ERA001
+                # logpost = np.log(post+np.finfo(post.dtype).eps)               # noqa: ERA001
 
                 if store_posterior:
                     posterior[t, 0, :] = logpost
@@ -695,3 +714,62 @@ class BayesianListener:
         return pf.Coordinates.from_cartesian(estimations[..., 0],
                                              estimations[..., 1],
                                              estimations[..., 2])
+
+    def localise(self, target=None, repetitions=None, seed=None):
+        """Run the full localisation pipeline and return pointing responses.
+
+        Convenience wrapper around :meth:`infer` and :meth:`estimate`.
+        Ensures the template (the listener's internal directional model) and
+        the target (the stimulus features to be localised) are both available,
+        then draws ``repetitions`` noisy percepts via Monte Carlo inference and
+        converts each MAP estimate into a pointing response perturbed by motor
+        noise.
+
+        Parameters
+        ----------
+        target : :class:`pyfar.Coordinates` or None, default=None
+            Source directions to localise.  Must share the same convention as
+            :attr:`template`.  ``None`` reuses :attr:`self.target`, computing
+            it via :meth:`compute_target` if not already set.
+        repetitions : int or None, default=None
+            Number of Monte Carlo trials passed to :meth:`infer`.
+            ``None`` uses the default of :meth:`infer` (50).
+        seed : int or None, default=None
+            Seed for :func:`numpy.random.default_rng`.  ``None`` yields a
+            non-reproducible run.
+
+        Returns
+        -------
+        :class:`pyfar.Coordinates`
+            Pointing responses of shape ``(n_targets, repetitions, 3)``.
+
+        Raises
+        ------
+        ValueError
+            If ``target`` has a different convention than :attr:`template`.
+
+        Examples
+        --------
+        >>> responses = bl.localise(repetitions=1, seed=0)      # doctest: +SKIP
+        >>> responses.cartesian.shape                           # doctest: +SKIP
+        (793, 1, 3)
+        """
+        if self.template is None:
+            self.compute_template()
+        if target is not None:
+            if type(target) is not type(self.template):
+                raise ValueError(
+                    f'Convention mismatch: '
+                    f'target={target.convention!r}, '
+                    f'template={self.template.convention!r}.')
+            self.target = target
+
+        if self.target is None:
+            self.compute_target()
+
+        estimates = self.estimate(self.infer(repetitions = repetitions, seed = seed), seed = seed)
+
+        return estimates
+
+
+

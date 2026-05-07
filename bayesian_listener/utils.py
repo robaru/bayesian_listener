@@ -54,7 +54,7 @@ def mag2db(mag):
 def erb_space(freq_range=[7e2, 18e3], erb_spacing=1):
     r"""Generate centre frequencies on the equivalent-rectangular-bandwidth (ERB) scale.
 
-    Translated from AMT 1.x ``audspacebw.m`` ([glasberg1990]_); converts the
+    Translated from AMT 1.x ``audspacebw.m`` (:footcite:t:`glasberg1990`); converts the
     bracketing frequencies to the ERB-rate scale, places points spaced by
     ``erb_spacing`` ERBs, then maps back to Hz.
 

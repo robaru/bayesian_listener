@@ -79,7 +79,7 @@ is computed relative to the best-fitting method for each listener.
 .. note::
 
    :math:`|\Delta\mathrm{BIC}| > 10` is conventionally regarded as strong
-   evidence in favour of the lower-BIC method (see [barumerli2026]_ in the
+   evidence in favour of the lower-BIC method (see :footcite:t:`barumerli2026` in the
    :ref:`Background <background>` page).
 
 What to do next
@@ -89,3 +89,8 @@ Use the winning interpolation method in :doc:`fit_model` for all listeners.
 The :func:`~bayesian_listener.resample.resample` function exposes all four
 methods and can be called directly if you need the interpolated feature arrays.
 Full interpolation API is in :doc:`../api/hrtf`.
+
+References
+----------
+
+.. footbibliography::

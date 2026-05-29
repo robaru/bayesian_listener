@@ -62,8 +62,8 @@ Where to start
       :link: guides/index
       :link-type: doc
 
-      Task-oriented walkthroughs: fit the model to your own HRTF, simulate
-      localization responses, and compare interpolation methods.
+      Task-oriented walkthroughs: simulate localization responses,
+      fit the model to your own HRTF, and compare interpolation methods.
 
    .. grid-item-card:: API Reference
       :link: api/index

@@ -16,8 +16,8 @@
    api/index
    background
 
-bayesian_listener
-=================
+An auditory model for simulating human sound localisation
+=========================================================
 
 .. image:: https://img.shields.io/pypi/v/bayesian_listener
    :target: https://pypi.org/project/bayesian_listener/
@@ -35,11 +35,18 @@ bayesian_listener
    :target: https://doi.org/10.1051/aacus/2023006
    :alt: DOI
 
-:mod:`bayesian_listener` simulates and fits a Bayesian model of human sound
-localisation from individual head-related transfer functions (HRTFs).
-It is the open-source Python implementation of the model introduced in
-:footcite:t:`barumerli2023` and statistically validated in :footcite:t:`barumerli2026`; see
-:ref:`background` for the equations, parameter table, and known limitations.
+|
+
+:mod:`bayesian_listener` is a Python package for simulating and fitting a
+Bayesian model of human sound localisation.  Given an individual's
+head-related transfer functions (HRTFs) and a binaural sound, it predicts full response
+distributions over all source directions (accounting for spectral,
+binaural, and motor-noise uncertainties).  Listener-specific noise parameters
+can be estimated from measured pointing data via maximum-likelihood
+optimisation.
+
+Where to start
+--------------
 
 .. grid:: 2
    :gutter: 3
@@ -76,6 +83,18 @@ Citing this work
 ----------------
 
 If you use :mod:`bayesian_listener` in your research, please cite the
-original model paper:
+original model paper and its statistical validation:
 
-.. footbibliography::
+.. code-block:: bibtex
+
+   @article{barumerli2023,
+     author  = {Barumerli, Roberto and Majdak, Piotr and Geronazzo, Michele
+                and Meijer, Demi and Avanzini, Federico and Baumgartner, Robert},
+     title   = {A {Bayesian} model for human directional localization of
+                broadband static sound sources},
+     journal = {Acta Acustica},
+     volume  = {7},
+     pages   = {12},
+     year    = {2023},
+     doi     = {10.1051/aacus/2023006},
+   }

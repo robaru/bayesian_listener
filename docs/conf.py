@@ -26,6 +26,7 @@ extensions = [
     'sphinx_copybutton',
     'sphinx_design',
     'sphinxcontrib.bibtex',
+    'sphinx.ext.doctest',
 ]
 
 bibtex_bibfiles = ['refs.bib']
@@ -131,8 +132,9 @@ intersphinx_mapping = {
 html_theme = 'furo'
 html_static_path = ['_static']
 html_css_files = ['css/custom.css']
-html_favicon = '_static/favicon.svg'
-html_title = 'bayesian_listener'
+html_favicon = '_static/favicon.png'
+html_logo = '_static/favicon.png'
+html_title = 'Bayesian Listener'
 
 # Furo theme options.
 # Palette: dark teal / slate family.

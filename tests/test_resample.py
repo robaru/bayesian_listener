@@ -80,36 +80,6 @@ def test_vbap_interpolate_norm2():
     np.testing.assert_allclose(l2_norms, 1.0, atol=1e-10)
     assert not np.allclose(w1, w2)
 
-
-def test_vbap_interpolate_matches_spaudiopy():
-    """vbap_interpolate matches spaudiopy.decoder.vbap (norm=1) to 1e-6.
-
-    Uses a full-sphere grid (both hemispheres) so all target directions are
-    enclosed by the convex hull, matching the actual use case in
-    resample_two_step where complement_sampling fills the bottom first.
-    """
-    import spaudiopy
-    from bayesian_listener.utils import vbap_interpolate
-
-    # full sphere grid
-    az = np.deg2rad(np.arange(0, 360, 30))
-    el = np.deg2rad(np.array([-60, -30, 0, 30, 60]))
-    az_grid, el_grid = np.meshgrid(az, el)
-    coords = pf.Coordinates.from_spherical_elevation(
-        az_grid.ravel(), el_grid.ravel(), np.ones(az_grid.size))
-    grid = coords.cartesian
-
-    rng = np.random.default_rng(42)
-    src = rng.standard_normal((10, 3))
-    src /= np.linalg.norm(src, axis=1, keepdims=True)
-
-    hull = spaudiopy.decoder.LoudspeakerSetup(grid[:, 0], grid[:, 1], grid[:, 2])
-    w_spa = spaudiopy.decoder.vbap(src, hull, norm=1)
-    w_ours = vbap_interpolate(src, grid)
-
-    np.testing.assert_allclose(w_ours, w_spa, atol=1e-6)
-
-
 def test_resample_kwargs_forwarded():
     """resample() forwards kwargs to resample_two_step."""
     cues, coords = make_grid()

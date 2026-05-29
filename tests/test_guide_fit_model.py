@@ -5,11 +5,11 @@ from pathlib import Path
 DATA_CSV = Path(__file__).parent.parent / "data" / "responses_P0001.csv"
 pytestmark = pytest.mark.skipif(
     not DATA_CSV.exists(),
-    reason="Response CSV not available (data/responses_P0001.csv)"
+    reason="Response CSV not available (data/responses_P0001.csv)",
 )
 
 
-def test_prepare_data(sofa_path):
+def test_prepare_data():
     # [prepare]
     import pandas as pd
     import pyfar as pf
@@ -45,6 +45,7 @@ def test_fit_and_inspect(sofa_path):
     result = fit_listener(
         sofa_path=sofa_path,
         obs_tbl=obs_tbl,
+        num_repetitions=1,
         targets_coords=targets_coords,
         interpolation_method="SHMAX",
     )

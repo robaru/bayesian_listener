@@ -729,7 +729,8 @@ class BayesianListener:
 
         Parameters
         ----------
-        target : :class:`~bayesian_listener.auditory_representation._AuditoryRepresentation` or None, default=None
+        target : :class:`~bayesian_listener.auditory_representation._AuditoryRepresentation` \
+or None, default=None
             Auditory representation of the source directions to localise.
             Must be the same subclass as :attr:`template`.  ``None`` reuses
             :attr:`target`, computing it via :meth:`compute_target` if not

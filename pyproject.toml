@@ -132,7 +132,9 @@ lint.select = [
     "D101",
     "D103",
     "D104",
+    "ERA001",  # doc-marker comments (# [section] / # [/section]) are intentional
 ]
+"conftest.py" = ["ERA001"]
 
 [tool.ruff.lint.pydocstyle]
 convention = "numpy"

@@ -1,3 +1,4 @@
+"""Shared pytest fixtures for the bayesian_listener test suite."""
 import pytest
 import urllib.request
 from pathlib import Path

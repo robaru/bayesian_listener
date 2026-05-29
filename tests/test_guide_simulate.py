@@ -1,6 +1,5 @@
 """Guide tests: Simulate Localization Responses (simulate_responses.rst)."""
 import numpy as np
-import pytest
 
 
 def test_simulate_full_pipeline(sofa_path):
@@ -23,7 +22,6 @@ def test_simulate_full_pipeline(sofa_path):
 
     # [metrics]
     from bayesian_listener.metrics import localization_error
-    import numpy as np
 
     # Ground-truth target directions (same order as listener.target.coords)
     targets = listener.target.coords   # pyfar.Coordinates, shape (n_targets,)

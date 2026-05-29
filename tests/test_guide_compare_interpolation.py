@@ -6,7 +6,7 @@ from pathlib import Path
 DATA_CSV = Path(__file__).parent.parent / "data" / "responses_P0001.csv"
 pytestmark = pytest.mark.skipif(
     not DATA_CSV.exists(),
-    reason="Response CSV not available (data/responses_P0001.csv)"
+    reason="Response CSV not available (data/responses_P0001.csv)",
 )
 
 
@@ -14,7 +14,6 @@ def test_compare_interpolation(sofa_path):
     # [fit_methods]
     import pandas as pd
     import pyfar as pf
-    import numpy as np
     from bayesian_listener.fitting import fit_listener, fit_listener_partial
 
     obs_tbl       = pd.read_csv(DATA_CSV)
@@ -25,7 +24,9 @@ def test_compare_interpolation(sofa_path):
         np.ones(len(targets)),
     )
 
-    results = fit_listener(sofa_path, obs_tbl, targets_coords, interpolation_method="SHMAX", num_repetitions=1)
+    results = fit_listener(
+        sofa_path, obs_tbl, targets_coords,
+        interpolation_method="SHMAX", num_repetitions=1)
 
     # fit only sigma_spectral (i.e. motor noise and prior fixed to default)
     results_noprior = fit_listener_partial(

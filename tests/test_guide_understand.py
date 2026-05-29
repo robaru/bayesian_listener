@@ -1,13 +1,11 @@
 """Guide tests: How to use the model (understand.rst)."""
 import numpy as np
-import pytest
 from bayesian_listener import BayesianListener
 
 
 def test_individual(sofa_path):
     # [individual]
     import pyfar as pf
-    from bayesian_listener import BayesianListener
 
     bl = BayesianListener(sofa_path)
     frontal = pf.Coordinates.from_spherical_elevation(0, 0, 1)
@@ -22,7 +20,6 @@ def test_individual(sofa_path):
 def test_nonindividual(sofa_path, sofa_path_non_individual):
     # [nonindividual]
     import pyfar as pf
-    from bayesian_listener import BayesianListener
     from bayesian_listener.metrics import angular_error
 
     frontal = pf.Coordinates.from_spherical_elevation(0, 0, 1)
@@ -54,7 +51,6 @@ def test_nonindividual(sofa_path, sofa_path_non_individual):
 def test_dynamic(sofa_path):
     # [dynamic]
     import numpy as np
-    from bayesian_listener import BayesianListener
 
     bl = BayesianListener(sofa_path)
     bl.compute_template()
@@ -88,10 +84,9 @@ def test_dynamic(sofa_path):
     assert len(estimates) == len(trajectory)
 
 
-def test_parameters(sofa_path, sofa_path_non_individual):
+def test_parameters(sofa_path):
     # [parameters]
     import pyfar as pf
-    from bayesian_listener import BayesianListener
     from bayesian_listener.metrics import localization_error
 
     frontal = pf.Coordinates.from_spherical_elevation(0, 0, 1)
@@ -107,8 +102,10 @@ def test_parameters(sofa_path, sofa_path_non_individual):
     bl.sigma_spectral = 15.0
     est_impaired = bl.localise(directions=frontal, repetitions=50, seed=0)
 
-    err_normal = localization_error(frontal, est_normal, metric = 'angular_error', degrees = True)
-    err_impaired = localization_error(frontal, est_impaired, metric = 'angular_error', degrees = True)
+    err_normal = localization_error(
+        frontal, est_normal, metric='angular_error', degrees=True)
+    err_impaired = localization_error(
+        frontal, est_impaired, metric='angular_error', degrees=True)
 
     print(f"\nNon-individual frontal error — normal: {err_normal:.1f}°, "
           f"impaired: {err_impaired:.1f}°, "

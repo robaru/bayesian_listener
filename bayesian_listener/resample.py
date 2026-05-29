@@ -15,7 +15,6 @@ Methods are compared on the SONICOM dataset in :footcite:t:`barumerli2026`, §2.
 """
 import numpy as np
 import spharpy as sy
-import spaudiopy
 import pyfar as pf
 import warnings
 from bayesian_listener import utils
@@ -42,7 +41,9 @@ def build_Y(dirs, N):
         Real SH basis :math:`\mathbf{Y}` of shape
         ``(n_dirs, (N + 1) ** 2)``.
     """
-    Y = sy.sph.sh_matrix(N, dirs[:, 0], dirs[:, 1], sh_type='real')
+    coords = pf.Coordinates.from_spherical_elevation(dirs[:, 0], dirs[:, 1],
+                                                      np.ones(len(dirs)))
+    Y = sy.spherical.spherical_harmonic_basis_real(N, coords)
     return Y
 
 def build_bau_damping(N):
@@ -451,16 +452,15 @@ def resample_barumerli2023(values,
     zen = c[..., 1]
 
     # get SH basis on new directions
-    int_new = spaudiopy.sph.sh_matrix(N_sph, dirs_SH[:, 0],
-                                      dirs_SH[:, 1],
-                                      sh_type='real')
+    int_new = build_Y(dirs_SH, N_sph)
 
     # Ensure all cues are at least 2D
     cues = [c[:, np.newaxis] if c.ndim == 1 else c for c in cues]
 
     if not flag_regularisation:
         # get SH matrix for input positions and transform to SH domain
-        cues_SH = [spaudiopy.sph.sht(c, N_sph, azi, zen, 'real') for c in cues]
+        Y_in = build_Y(np.stack([azi, zen], axis=1), N_sph)
+        cues_SH = [np.linalg.pinv(Y_in) @ c for c in cues]
     else:
         # regularization
         lambda_val = 4.0
@@ -468,7 +468,7 @@ def resample_barumerli2023(values,
         SIG[1:(2+1)**2,1:(2+1)**2] = 0
 
         # get SH basis on old directions
-        Y_N_tik = spaudiopy.sph.sh_matrix(N_sph, azi, zen, 'real')
+        Y_N_tik = build_Y(np.stack([azi, zen], axis=1), N_sph)
         # Compute regularized inverse once
         Y_inv_reg = np.linalg.solve(
             np.transpose(Y_N_tik)@Y_N_tik+lambda_val*SIG,

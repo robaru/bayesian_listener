@@ -16,7 +16,7 @@ import functools
 
 
 def localization_error(targets, estimations, metric,
-                       auxiliary_output=False, **kwargs):
+                       auxiliary_output=False, degrees=False, **kwargs):
     """
     Compute the localization error between two sets of coordinates
     using the specified metric.
@@ -24,9 +24,12 @@ def localization_error(targets, estimations, metric,
     Parameters
     ----------
     targets : pyfar.Coordinates
-        The target (reference) coordinates.
+        The target (reference) coordinates, shape ``(n_targets,)``.
     estimations : pyfar.Coordinates
-        The estimated coordinates to compare against.
+        The estimated coordinates to compare against.  May have an extra
+        repetitions dimension, i.e. shape ``(n_targets, repetitions)``;
+        ``targets`` is broadcast accordingly and both are flattened to
+        ``(n_targets * repetitions,)`` before the metric is applied.
     metric : str or :py:obj:`~typing.Callable`
         The metric to use for error computation.
 
@@ -43,6 +46,10 @@ def localization_error(targets, estimations, metric,
         Ignored when ``metric`` is a callable (the callable handles its own
         return shape).  When ``True`` and ``metric`` is a registered string,
         returns the auxiliary output dict alongside the error value.
+    degrees : bool, default=False
+        When ``True``, convert the returned error value to degrees.  Has no
+        effect for metrics whose ``output_unit`` is already ``'degrees'`` or
+        ``'percentage'``.
     **kwargs : dict, optional
         Forwarded to the metric function.
 
@@ -167,8 +174,16 @@ def localization_error(targets, estimations, metric,
             converted_est.shape,
         )
 
+    # Flatten (n_targets, repetitions, 3) → (n_targets * repetitions, 3)
+    if converted_est.ndim > 2:
+        converted_tar = converted_tar.reshape(-1, 3)
+        converted_est = converted_est.reshape(-1, 3)
+
     value, aux_out = \
         METRIC_FUNCTIONS[metric](converted_tar, converted_est, **kwargs)
+
+    if degrees and get_metric_metadata(metric)['output_unit'] == 'radians':
+        value = np.rad2deg(value)
 
     return (value, aux_out) if auxiliary_output else value
 

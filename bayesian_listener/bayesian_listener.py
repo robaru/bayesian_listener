@@ -1,4 +1,5 @@
 """BayesianListener module: core auditory model for sound localisation."""
+import warnings
 import sofar
 import numpy as np
 import pyfar as pf
@@ -715,7 +716,8 @@ class BayesianListener:
                                              estimations[..., 1],
                                              estimations[..., 2])
 
-    def localise(self, target=None, repetitions=None, seed=None):
+    def localise(self, target=None, directions=None, repetitions=None,
+                 seed=None):
         """Run the full localisation pipeline and return pointing responses.
 
         Convenience wrapper around :meth:`infer` and :meth:`estimate`.
@@ -727,10 +729,17 @@ class BayesianListener:
 
         Parameters
         ----------
-        target : :class:`pyfar.Coordinates` or None, default=None
-            Source directions to localise.  Must share the same convention as
-            :attr:`template`.  ``None`` reuses :attr:`target`, computing
-            it via :meth:`compute_target` if not already set.
+        target : :class:`~bayesian_listener.auditory_representation._AuditoryRepresentation` or None, default=None
+            Auditory representation of the source directions to localise.
+            Must be the same subclass as :attr:`template`.  ``None`` reuses
+            :attr:`target`, computing it via :meth:`compute_target` if not
+            already set.  When combined with ``directions``, acts as the
+            search pool from which directions are selected.
+        directions : :class:`pyfar.Coordinates` or None, default=None
+            Desired source directions.  The nearest neighbours in the
+            resolved ``target`` are selected via great-circle distance.  A
+            :class:`UserWarning` is raised for any match farther than 10°.
+            Raises :class:`ValueError` if the intersection is empty.
         repetitions : int or None, default=None
             Number of Monte Carlo trials passed to :meth:`infer`.
             ``None`` uses the default of :meth:`infer` (50).
@@ -746,7 +755,12 @@ class BayesianListener:
         Raises
         ------
         ValueError
+            If ``target`` and ``directions`` are both provided.
+        ValueError
             If ``target`` has a different convention than :attr:`template`.
+        ValueError
+            If ``directions`` finds no match within the provided or stored
+            ``target`` (empty intersection).
 
         Examples
         --------
@@ -756,6 +770,7 @@ class BayesianListener:
         """
         if self.template is None:
             self.compute_template()
+
         if target is not None:
             if type(target) is not type(self.template):
                 raise ValueError(
@@ -767,7 +782,33 @@ class BayesianListener:
         if self.target is None:
             self.compute_target()
 
-        estimates = self.estimate(self.infer(repetitions = repetitions, seed = seed), seed = seed)
+        if directions is not None:
+            # rescale to match the target grid radius so find_nearest doesn't reject
+            target_radius = float(self.target.coords.radius.flat[0])
+            unit = directions.cartesian / np.linalg.norm(
+                directions.cartesian, axis=-1, keepdims=True)
+            directions_scaled = pf.Coordinates.from_cartesian(
+                *(unit * target_radius).T)
+            indices, distances = self.target.coords.find_nearest(
+                directions_scaled, distance_measure='spherical_radians')
+            indices = list(np.atleast_1d(indices))
+            if len(indices) == 0:
+                raise ValueError(
+                    "No directions matched: the intersection of 'directions' "
+                    "and 'target' is empty.")
+            distances_deg = np.rad2deg(np.atleast_1d(distances))
+            far = distances_deg > 10
+            if np.any(far):
+                warnings.warn(
+                    f"{np.sum(far)} requested direction(s) snapped to a grid "
+                    f"point farther than 10°  (max {distances_deg.max():.1f}°).",
+                    UserWarning, stacklevel=2)
+            self.target = self.target[indices]
+
+        infer_kwargs = {"seed": seed}
+        if repetitions is not None:
+            infer_kwargs["repetitions"] = repetitions
+        estimates = self.estimate(self.infer(**infer_kwargs), seed=seed)
 
         return estimates
 

@@ -60,12 +60,10 @@ The simplest case: one listener, one HRTF.
 extraction, template interpolation, Bayesian inference, and motor noise in
 a single call.
 
-.. code-block:: python
-
-   from bayesian_listener import BayesianListener
-
-   bl = BayesianListener("P0001_FreeFieldCompMinPhase_48kHz.sofa")
-   estimates = bl.localise()  # pyfar.Coordinates of predicted directions
+.. literalinclude:: ../../tests/test_guide_understand.py
+   :language: python
+   :start-after: # [individual]
+   :end-before: # [/individual]
 
 Results are cached on disk after the first call, so subsequent calls to
 :meth:`~bayesian_listener.BayesianListener.compute_template` return
@@ -80,20 +78,10 @@ Simulate how a listener performs when fitted with a non-individual HRTF.
 The individual listener's **template** is retained; only the **target**
 (the stimulus representation) is replaced with the foreign HRTF.
 
-.. code-block:: python
-
-   from bayesian_listener import BayesianListener
-
-   # Build template from the individual's own HRTF
-   individual = BayesianListener("individual.sofa")
-   individual.compute_template()
-
-   # Extract target features from the foreign HRTF (no interpolation needed)
-   foreign = BayesianListener("foreign.sofa")
-   foreign.compute_target()
-
-   # Pass the foreign target directly — localise() swaps it in before inference
-   estimates = individual.localise(target=foreign.target)
+.. literalinclude:: ../../tests/test_guide_understand.py
+   :language: python
+   :start-after: # [nonindividual]
+   :end-before: # [/nonindividual]
 
 :meth:`~bayesian_listener.BayesianListener.localise` passes ``target`` to
 :meth:`~bayesian_listener.BayesianListener.infer`, which compares the foreign
@@ -110,9 +98,9 @@ e.g. different HRTFs or source sets — compute the template once and swap
 only the target inside the loop.  Each ``target`` already contains
 features for *all* source directions in its SOFA file, so a single swap
 covers the full set of stimuli for that condition.  This pattern is the
-basis of the FrAMBI framework :footcite:t:`barumerli2025`, which uses repeated
+basis of the FrAMBI framework [barumerli2025]_, which uses repeated
 inference over a sequence of conditions to model dynamic auditory tasks.
-:footcite:t:`llado2024` applied this approach to predict how headphone
+[llado2024]_ applied this approach to predict how headphone
 HRTFs affect the time to localise a target in an auditory-guided visual
 search task.
 
@@ -123,35 +111,10 @@ target changes at each step.  With one repetition and ``store_posterior=True``,
 ``(1, 1, n_templates)`` — squeezed to ``(n_templates,)`` it is a valid prior
 for the following call.
 
-.. code-block:: python
-
-   import numpy as np
-   from bayesian_listener import BayesianListener
-
-   bl = BayesianListener("subject.sofa")
-   bl.compute_template()
-   bl.compute_target()
-
-   # Select directions on the horizontal plane, azimuth 0–90°
-   sph = bl.target.coords.spherical_elevation
-   azi_deg = np.rad2deg(sph[:, 0])
-   ele_deg = np.rad2deg(sph[:, 1])
-   mask = (ele_deg == 0) & (azi_deg >= 0) & (azi_deg <= 90)
-
-   # Build trajectory: one single-direction target per step, sorted by azimuth
-   trajectory_indices = np.where(mask)[0][np.argsort(azi_deg[mask])]
-   trajectory = [bl.target[i] for i in trajectory_indices]
-
-   prior = 'horizontal'   # initialise with the default elevation prior
-   estimates = []
-   for step_target in trajectory:
-       bl.target = step_target
-       posterior = bl.infer(repetitions=1, prior=prior, store_posterior=True)
-       estimates.append(bl.estimate(posterior))
-       # squeeze (1, 1, n_templates) → (n_templates,) and convert to linear domain
-       prior = np.exp(posterior.squeeze())
-       prior /= prior.sum()
-
+.. literalinclude:: ../../tests/test_guide_understand.py
+   :language: python
+   :start-after: # [dynamic]
+   :end-before: # [/dynamic]
 
 .. _workflow_parameters:
 
@@ -209,21 +172,10 @@ Each parameter has a specific physical role in the static localisation task:
 
 All parameters can be set at construction time or updated in place:
 
-.. code-block:: python
-
-   from bayesian_listener import BayesianListener
-
-   # Set individual parameters at construction
-   bl = BayesianListener("subject.sofa",
-                         sigma_spectral=8.2,   # listener with sharp spectral processing
-                         sigma_prior=45.0,     # stronger horizontal prior than average
-                         kappa_motor=30.0)     # precise motor responses
-
-   estimates = bl.localise(repetitions=200, seed=0)
-
-   # Or update in place before a new simulation
-   bl.sigma_spectral = 15.0   # re-run for a listener with poor spectral acuity
-   estimates_impaired = bl.localise(repetitions=200, seed=0)
+.. literalinclude:: ../../tests/test_guide_understand.py
+   :language: python
+   :start-after: # [parameters]
+   :end-before: # [/parameters]
 
 If you have measured behavioural responses from a listener, individual
 parameters can be estimated objectively via maximum likelihood optimisation
@@ -240,4 +192,11 @@ See also
 References
 ----------
 
-.. footbibliography::
+.. [barumerli2025] R. Barumerli and P. Majdak, "FrAMBI: A Software Framework
+   for Auditory Modeling Based on Bayesian Inference," *Neuroinformatics*,
+   vol. 23, no. 2, 2025. https://doi.org/10.1007/s12021-024-09702-5
+
+.. [llado2024] P. Lladó, R. Barumerli, R. Baumgartner, and P. Majdak,
+   "Predicting the effect of headphones on the time to localize a target
+   in an auditory-guided visual search task," *Frontiers in Virtual Reality*,
+   vol. 5, 2024. https://doi.org/10.3389/frvir.2024.1359987

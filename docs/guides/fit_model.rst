@@ -46,22 +46,10 @@ You need:
   (all in degrees, spherical-elevation convention).
 - A :class:`pyfar.Coordinates` object with the target directions.
 
-.. code-block:: python
-
-   import pandas as pd
-   import pyfar as pf
-   import numpy as np
-
-   # Example: load your response table
-   obs_tbl = pd.read_csv("responses_P0001.csv")
-
-   # Build target coordinates from unique (azimuth, elevation) pairs
-   targets = obs_tbl[["azi_target", "ele_target"]].drop_duplicates()
-   targets_coords = pf.Coordinates.from_spherical_elevation(
-       np.deg2rad(targets["azi_target"].values),
-       np.deg2rad(targets["ele_target"].values),
-       np.ones(len(targets)),
-   )
+.. literalinclude:: ../../tests/test_guide_fit_model.py
+   :language: python
+   :start-after: # [prepare]
+   :end-before: # [/prepare]
 
 Run the two-stage fit
 ---------------------
@@ -69,21 +57,10 @@ Run the two-stage fit
 :func:`~bayesian_listener.fitting.fit_listener` runs both stages and returns
 a results dictionary.
 
-.. code-block:: python
-
-   from bayesian_listener.fitting import fit_listener
-
-   result = fit_listener(
-       sofa_path="P0001_FreeFieldCompMinPhase_48kHz.sofa",
-       obs_tbl=obs_tbl,
-       targets_coords=targets_coords,
-       interpolation_method="SHMAX",  # recommended; see compare_interpolation
-   )
-
-   print(f"sigma_motor   = {result['sigma_motor']:.2f} deg")
-   print(f"sigma_spectral = {result['sigma_spectral']:.2f} dB")
-   print(f"sigma_prior   = {result['sigma_prior']:.2f} deg")
-   print(f"NLL           = {result['nll']:.2f}")
+.. literalinclude:: ../../tests/test_guide_fit_model.py
+   :language: python
+   :start-after: # [fit]
+   :end-before: # [/fit]
 
 .. note::
 
@@ -98,20 +75,10 @@ Inspect the result
 The returned dictionary contains all fitted and fixed parameter values, timing
 information, and the final negative log-likelihood:
 
-.. code-block:: python
-
-   # Fixed parameters (not changed by the fit)
-   print(result["sigma_itd"])    # 0.569 (ITD noise, fixed)
-   print(result["sigma_ild"])    # 1.0   (ILD noise, fixed by default)
-
-   # Fitted parameters
-   print(result["sigma_spectral"])
-   print(result["sigma_prior"])
-   print(result["kappa_motor"])  # concentration form of sigma_motor
-
-   # Diagnostics
-   print(result["n_trials"])     # number of responses used
-   print(result["time_total"])   # wall-clock seconds
+.. literalinclude:: ../../tests/test_guide_fit_model.py
+   :language: python
+   :start-after: # [inspect]
+   :end-before: # [/inspect]
 
 What to do next
 ---------------

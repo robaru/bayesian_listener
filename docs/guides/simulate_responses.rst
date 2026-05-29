@@ -26,12 +26,10 @@ Prepare features
 ILD, and spectral cues from the HRTF and interpolates them onto a uniform
 spherical template grid.
 
-.. code-block:: python
-
-   from bayesian_listener import BayesianListener
-
-   listener = BayesianListener("P0001_FreeFieldCompMinPhase_48kHz.sofa")
-   listener.compute_template(interpolation="SHMAX")
+.. literalinclude:: ../../tests/test_guide_simulate.py
+   :language: python
+   :start-after: # [prepare]
+   :end-before: # [/prepare]
 
 Run inference
 -------------
@@ -40,10 +38,10 @@ Run inference
 for each source position, repeated ``repetitions`` times to account for
 sensory noise.
 
-.. code-block:: python
-
-   posterior = listener.infer(repetitions=200, prior="horizontal", seed=0)
-   # posterior shape: (n_targets, repetitions) — argmax indices into template grid
+.. literalinclude:: ../../tests/test_guide_simulate.py
+   :language: python
+   :start-after: # [infer]
+   :end-before: # [/infer]
 
 Sample motor responses
 ----------------------
@@ -51,10 +49,10 @@ Sample motor responses
 :meth:`~bayesian_listener.BayesianListener.estimate` adds von Mises–Fisher
 motor noise to each MAP estimate and returns pointing directions.
 
-.. code-block:: python
-
-   responses = listener.estimate(posterior, seed=0)
-   # responses: pyfar.Coordinates, shape (n_targets, repetitions)
+.. literalinclude:: ../../tests/test_guide_simulate.py
+   :language: python
+   :start-after: # [estimate]
+   :end-before: # [/estimate]
 
 .. note::
 
@@ -65,29 +63,14 @@ motor noise to each MAP estimate and returns pointing directions.
 Compute localisation metrics
 ----------------------------
 
-Use :func:`~bayesian_listener.metrics.localization_error` to compute lateral
-RMS error (LE), polar RMS error (PE), and quadrant error rate (QE) from the
-simulated responses.
+Use :func:`~bayesian_listener.metrics.localization_error` to compute standard
+metrics one at a time.  The function expects flat :class:`pyfar.Coordinates`
+of the same length, so repeat the target directions to match the response array.
 
-.. code-block:: python
-
-   from bayesian_listener.metrics import localization_error
-   import numpy as np
-
-   # Ground-truth target directions (same order as listener.coords)
-   targets = listener.coords   # pyfar.Coordinates
-
-   # Flatten repetitions into a single response list
-   n_targets, n_reps = posterior.shape
-   targets_repeated = targets[np.repeat(np.arange(n_targets), n_reps)]
-   responses_flat   = responses.reshape(n_targets * n_reps)
-
-   errors = localization_error(
-       targets_repeated,
-       responses_flat,
-       metrics=["rmsL", "rmsPmedianlocal", "querrMiddlebrooks"],
-   )
-   print(errors)
+.. literalinclude:: ../../tests/test_guide_simulate.py
+   :language: python
+   :start-after: # [metrics]
+   :end-before: # [/metrics]
 
 What to do next
 ---------------

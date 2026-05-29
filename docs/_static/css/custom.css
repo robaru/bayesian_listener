@@ -1,3 +1,13 @@
+/* Sidebar logo size. */
+.sidebar-logo {
+    max-width: 60px;
+}
+
+/* Breathing room between badges and intro paragraph. */
+.section > p:first-of-type {
+    margin-top: 1.5rem;
+}
+
 /* Transparent image backgrounds — keeps HRTF plots readable in both modes. */
 img {
     background-color: transparent !important;

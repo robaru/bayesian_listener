@@ -80,6 +80,7 @@ def test_vbap_interpolate_norm2():
     np.testing.assert_allclose(l2_norms, 1.0, atol=1e-10)
     assert not np.allclose(w1, w2)
 
+
 def test_resample_kwargs_forwarded():
     """resample() forwards kwargs to resample_two_step."""
     cues, coords = make_grid()

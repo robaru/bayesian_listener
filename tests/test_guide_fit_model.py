@@ -2,6 +2,8 @@
 import pytest
 from pathlib import Path
 
+pytestmark = pytest.mark.guide
+
 DATA_CSV = Path(__file__).parent.parent / "data" / "responses_P0001.csv"
 pytestmark = pytest.mark.skipif(
     not DATA_CSV.exists(),

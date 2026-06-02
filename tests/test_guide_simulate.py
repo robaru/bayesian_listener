@@ -1,5 +1,8 @@
 """Guide tests: Simulate Localization Responses (simulate_responses.rst)."""
+import pytest
 import numpy as np
+
+pytestmark = pytest.mark.guide
 
 
 def test_simulate_full_pipeline(sofa_path):

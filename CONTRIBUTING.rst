@@ -29,6 +29,27 @@ bayesian_listener could always use more documentation, whether as part of the
 official bayesian_listener docs, in docstrings, or even on the web in blog posts,
 articles, and such.
 
+If you are planning to show code in the documentation, add a corresponding
+test in ``tests/test_guide_<guide_name>.py``.  Mark it so it is skipped in
+the default test run but can be executed on demand::
+
+    import pytest
+    pytestmark = pytest.mark.guide
+
+    def test_my_example(sofa_path):
+        # [my_section]
+        from bayesian_listener import BayesianListener
+        bl = BayesianListener(sofa_path)
+        estimates = bl.localise(repetitions=1, seed=0)
+        # [/my_section]
+        assert estimates is not None
+
+The ``# [my_section]`` / ``# [/my_section]`` markers let Sphinx pull the
+snippet into the docs via ``literalinclude`` with ``start-after`` /
+``end-before``.  Run the guide tests with::
+
+    $ pytest -m guide
+
 Get Started!
 ------------
 

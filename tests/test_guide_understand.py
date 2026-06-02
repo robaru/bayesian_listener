@@ -1,6 +1,9 @@
 """Guide tests: How to use the model (understand.rst)."""
+import pytest
 import numpy as np
 from bayesian_listener import BayesianListener
+
+pytestmark = pytest.mark.guide
 
 
 def test_individual(sofa_path):

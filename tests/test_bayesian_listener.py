@@ -4,6 +4,7 @@ import pyfar as pf
 import sofar
 from pathlib import Path
 import urllib.request
+from scipy.signal import lfilter
 from bayesian_listener import BayesianListener, Barumerli2023
 from bayesian_listener.auditory_representation import Barumerli2023pge
 from bayesian_listener import utils
@@ -303,3 +304,157 @@ def test_barumerli2023pge_not_implemented():
     with pytest.raises(NotImplementedError):
         Barumerli2023pge(coords=None, itd=None, ild=None,
                          spectral_gradient=None, freqs=None)
+
+
+def test_gammatone_minimum_ir_length_numerical_error():
+    """Per-band minimum-IR padding captures the same filter energy as the current 50 ms padding.
+
+    The mean-based RMS used in compute_features is proportional to 1/sqrt(N) where
+    N is the total signal length, so it is not a stable metric for comparing runs
+    with different padding lengths.  The meaningful, N-independent quantity is the
+    *total half-wave-rectified energy* (sum, not mean) accumulated from each
+    gammatone band.  That sum converges once the filter impulse response has decayed.
+
+    This test validates three claims (issue #14):
+
+    1. Per-band minimum-IR padding (utils.minimum_ir_length) captures the same
+       total energy as the current 50 ms reference padding, within np.allclose
+       defaults — confirming the amplitude-decay criterion is sufficient.
+
+    2. For the lowest gammatone band (~700 Hz at 48 kHz), minimum_ir_length is
+       *longer* than the current 50 ms extra-padding, confirming the formula is
+       conservative (i.e. it sets a safe upper bound on the required length).
+
+    3. For the highest gammatone band (~18 kHz), minimum_ir_length is far *shorter*
+       than the current 50 ms padding — this is the band where most memory is wasted
+       under the current uniform scheme, and where per-band padding yields the
+       largest savings.
+    """
+    sofa_file = get_sofa_file()
+    sofa_data = sofar.read_sofa(sofa_file, verbose=False)
+    hrir_all = sofa_data.Data_IR  # (n_dirs, 2, n_samples)
+    fs = int(sofa_data.Data_SamplingRate)
+
+    # Use a small subset of directions to keep the test fast.
+    rng = np.random.default_rng(0)
+    subset_idx = rng.choice(hrir_all.shape[0], size=10, replace=False)
+    hrir = hrir_all[subset_idx]  # (10, 2, n_samples)
+    hrir_len = hrir.shape[-1]
+
+    spectral_range = [700.0, 18000.0]
+    freqs = utils.erb_space(spectral_range)
+    B, A, *_ = utils.gammatone(freqs, fs=fs)
+    min_lens = utils.minimum_ir_length(freqs, fs=fs)  # per-band minimum extra lengths
+
+    def _band_energy(hrir_padded, b_i, a_i):
+        """Total half-wave-rectified energy for one gammatone band."""
+        filtered = 2.0 * np.real(lfilter([b_i], a_i, hrir_padded, axis=-1))
+        return np.sum(np.maximum(filtered, 0.0), axis=-1)  # (n_dirs, 2)
+
+    # --- reference: current 50 ms fixed total (the behaviour we want to match) ---
+    current_total = max(int(round(0.05 * fs)), hrir_len)
+    current_extra = current_total - hrir_len
+    hrir_cur = np.concatenate(
+        [hrir, np.zeros((*hrir.shape[:2], current_extra), dtype=hrir.dtype)],
+        axis=-1) if current_extra > 0 else hrir
+
+    # --- collect per-band total energy for reference and min-padded strategies ---
+    energy_cur = np.zeros((len(freqs), hrir.shape[0], hrir.shape[1]))
+    energy_min = np.zeros_like(energy_cur)
+
+    for i, (_, b_i, a_i, ml_i) in enumerate(zip(freqs, B, A, min_lens)):
+        energy_cur[i] = _band_energy(hrir_cur, b_i, a_i)
+
+        hrir_min = np.concatenate(
+            [hrir, np.zeros((*hrir.shape[:2], int(ml_i)), dtype=hrir.dtype)],
+            axis=-1)
+        energy_min[i] = _band_energy(hrir_min, b_i, a_i)
+
+    # 1. Per-band minimum padding captures the same total energy as the current
+    #    50 ms reference padding.
+    assert np.allclose(energy_min, energy_cur), (
+        f"min_padded vs current: max abs diff = "
+        f"{np.max(np.abs(energy_min - energy_cur)):.2e}")
+
+    # 2. For the lowest band, minimum_ir_length is longer than the current extra
+    #    padding — the formula is conservative (safe upper bound).
+    low_band_idx = 0
+    min_extra_low = int(min_lens[low_band_idx])
+    assert min_extra_low > current_extra, (
+        f"minimum_ir_length for the lowest band "
+        f"(fc={freqs[low_band_idx]:.1f} Hz) is {min_extra_low} samples, "
+        f"expected > current extra padding ({current_extra} samples).")
+
+    # 3. For the highest band, minimum_ir_length is much shorter than the current
+    #    extra padding — the current uniform scheme wastes memory there.
+    high_band_idx = -1
+    min_extra_high = int(min_lens[high_band_idx])
+    assert min_extra_high < current_extra // 10, (
+        f"minimum_ir_length for the highest band "
+        f"(fc={freqs[high_band_idx]:.1f} Hz) is {min_extra_high} samples, "
+        f"expected < 1/10 of current extra padding ({current_extra} samples).")
+
+
+def test_fft_gammatone_accuracy():
+    """FFT convolution with truncated gammatone IR matches IIR lfilter spectral cues.
+
+    The FFT approach:
+    1. Computes the gammatone impulse response (length = minimum_ir_length per band).
+    2. Linearly convolves each HRIR with that IR via rfft/irfft.
+    3. Applies half-wave rectification and computes RMS.
+
+    The IIR reference:
+    - Zero-pads each HRIR to hrir_len + minimum_ir_length and applies lfilter.
+
+    Both use the same truncation length, so any difference is due to floating-point
+    arithmetic only.  The test uses np.allclose defaults (rtol=1e-5, atol=1e-8).
+    """
+    sofa_file = get_sofa_file()
+    sofa_data = sofar.read_sofa(sofa_file, verbose=False)
+    hrir = sofa_data.Data_IR          # (n_dirs, 2, n_samples) — full HRTF
+    fs   = int(sofa_data.Data_SamplingRate)
+    hrir_len = hrir.shape[-1]
+
+    spectral_range = [700.0, 18000.0]
+    freqs    = utils.erb_space(spectral_range)
+    B, A, *_ = utils.gammatone(freqs, fs=fs)
+    min_lens = utils.minimum_ir_length(freqs, fs=fs)
+
+    def _iir_rms(hrir_padded, b_i, a_i):
+        filtered = 2.0 * np.real(lfilter([b_i], a_i, hrir_padded, axis=-1))
+        return np.sqrt(np.mean(np.maximum(filtered, 0.0), axis=-1))
+
+    def _fft_rms(hrir_raw, b_i, a_i, ir_len):
+        # Gammatone impulse response (truncated to ir_len)
+        impulse = np.zeros(ir_len)
+        impulse[0] = 1.0
+        gir = 2.0 * np.real(lfilter([b_i], a_i, impulse))   # (ir_len,)
+
+        # Linear convolution via rfft — output length = hrir_len + ir_len - 1
+        fft_size = int(2 ** np.ceil(np.log2(hrir_len + ir_len - 1)))
+        H = np.fft.rfft(hrir_raw, n=fft_size, axis=-1)      # (n_dirs, 2, fft_size//2+1)
+        G = np.fft.rfft(gir,      n=fft_size)               # (fft_size//2+1,)
+        filtered = np.fft.irfft(H * G, n=fft_size, axis=-1) # (n_dirs, 2, fft_size)
+
+        # Trim to hrir_len + ir_len - 1 (same as IIR output with same padding)
+        filtered = filtered[..., : hrir_len + ir_len - 1]
+        return np.sqrt(np.mean(np.maximum(filtered, 0.0), axis=-1))
+
+    rms_iir = np.zeros((len(freqs), hrir.shape[0], hrir.shape[1]))
+    rms_fft = np.zeros_like(rms_iir)
+
+    for i, (b_i, a_i, ml_i) in enumerate(zip(B, A, min_lens)):
+        ir_len = int(ml_i)
+        # Pad with ir_len-1 zeros so IIR output length = hrir_len + ir_len - 1,
+        # matching the FFT linear-convolution output length exactly.
+        hrir_padded = np.concatenate(
+            [hrir, np.zeros((*hrir.shape[:2], ir_len - 1), dtype=hrir.dtype)], axis=-1)
+
+        rms_iir[i] = _iir_rms(hrir_padded, b_i, a_i)
+        rms_fft[i] = _fft_rms(hrir, b_i, a_i, ir_len)
+
+    assert np.allclose(rms_fft, rms_iir), (
+        f"FFT vs IIR spectral cues: max abs diff = "
+        f"{np.max(np.abs(rms_fft - rms_iir)):.2e}, "
+        f"max rel diff = {np.max(np.abs(rms_fft - rms_iir) / (np.abs(rms_iir) + 1e-12)):.2e}"
+    )

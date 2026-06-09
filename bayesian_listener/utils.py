@@ -265,7 +265,7 @@ def minimum_ir_length(fc, fs, n=4, tolerance=5e-5):
 
     Returns
     -------
-    lengths : ndarray of int, shape (n_bands,)
+    lengths : ndarray of int, shape ``(n_bands,)``
         Minimum number of samples for the impulse response of each band to
         decay to ``tolerance``.  Always at least ``n + 1``.
     """
@@ -986,7 +986,7 @@ def compute_features(hrir, coords, fs, spectral_range=[7e2, 18e3],
        (:func:`gammatone`) and convert per-band amplitude to dB.
 
     Gammatone filtering uses a Numba-compiled fused kernel
-    (:func:`_gammatone_rms_numba`) that processes all bands concurrently
+    (``_gammatone_rms_numba``) that processes all bands concurrently
     across CPU cores without storing any intermediate filtered signal.
     Each band is zero-padded by its minimum impulse response length
     (:func:`minimum_ir_length`) rather than a fixed 50 ms, reducing peak

@@ -15,6 +15,8 @@ Feature extraction
 
 .. autofunction:: bayesian_listener.utils.gammatone
 
+.. autofunction:: bayesian_listener.utils.minimum_ir_length
+
 .. autofunction:: bayesian_listener.utils.itdestimator
 
 Interpolation

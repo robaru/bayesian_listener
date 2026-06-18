@@ -8,15 +8,16 @@
 API Reference
 =============
 
-The API is organized by functional role.  A typical workflow touches
-:doc:`model` (inference), :doc:`fitting` (parameter estimation), and
-:doc:`hrtf` (feature preparation).
+The API is organized by module.  A typical workflow touches
+:doc:`bayesian_listener` (inference), :doc:`fitting` (parameter estimation),
+:doc:`utils` (feature extraction), and :doc:`resample` (template interpolation).
 
 .. toctree::
    :maxdepth: 1
 
-   model
+   bayesian_listener
    fitting
-   evaluation
-   hrtf
-   statistics
+   metrics
+   plotting
+   resample
+   utils

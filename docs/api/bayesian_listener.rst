@@ -1,9 +1,9 @@
-.. _api_model:
+.. _api_bayesian_listener:
 
-Model
-=====
+Bayesian Listener
+=================
 
-The core class and auditory representation types.
+The core class and auditory representation.
 
 BayesianListener
 ----------------
@@ -17,7 +17,7 @@ The single entry point for all inference and simulation workflows.
 Barumerli2023
 -------------
 
-The concrete representation used by the default workflow: ITD + ILD +
+The concrete auditory representation used by the default workflow: ITD + ILD +
 monaural spectral amplitude envelopes (:footcite:t:`barumerli2026`).
 
 .. autoclass:: bayesian_listener.Barumerli2023

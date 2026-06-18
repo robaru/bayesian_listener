@@ -1,4 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 610 100">
+  <!-- White background for dark mode compatibility -->
+  <rect width="610" height="100" fill="white"/>
   <!--
     Pipeline diagram: Feature Extraction -> Bayesian Inference -> Motor Noise -> Response
     Uses currentColor throughout so the diagram adapts to Furo light and dark modes.

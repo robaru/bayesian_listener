@@ -17,10 +17,21 @@ Two-stage fitting
 
 .. autofunction:: bayesian_listener.fitting.estimate_motor_noise
 
-Likelihood objective
---------------------
+Likelihood
+----------
 
 .. autofunction:: bayesian_listener.fitting.negloglik
+
+.. autofunction:: bayesian_listener.fitting.von_mises_loglik_mc
+
+.. autofunction:: bayesian_listener.fitting.fit_kappa_ml
+
+Parameter conversion
+--------------------
+
+.. autofunction:: bayesian_listener.fitting.sigma_to_kappa
+
+.. autofunction:: bayesian_listener.fitting.kappa_to_sigma
 
 Parameter bounds
 ----------------

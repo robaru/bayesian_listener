@@ -57,10 +57,6 @@ nitpicky = True
 # pyfar.Coordinates, pybads.BADS, etc. would raise a build error even though the
 # names are correct.
 nitpick_ignore = [
-    ('py:class', 'pyfar.Coordinates'),
-    ('py:class', 'pyfar.classes.coordinates.Coordinates'),
-    ('py:class', 'sofar.Sofa'),
-    ('py:class', 'sofar.sofar.Sofa'),
     ('py:class', 'pybads.BADS'),
     ('py:class', 'spharpy'),
     ('py:class', 'spaudiopy'),
@@ -126,6 +122,8 @@ intersphinx_mapping = {
     'scipy':  ('https://docs.scipy.org/doc/scipy/', None),
     'pandas': ('https://pandas.pydata.org/docs/', None),
     'matplotlib': ('https://matplotlib.org/stable/', None),
+    'pyfar':  ('https://pyfar.readthedocs.io/en/stable/', None),
+    'sofar':  ('https://sofar.readthedocs.io/en/stable/', None),
 }
 
 # -- HTML output

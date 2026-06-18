@@ -476,10 +476,18 @@ DEFAULT_PARAMS = types.MappingProxyType({
 PARAM_BOUNDS = types.MappingProxyType({
     'sigma_ild':      types.MappingProxyType({'lb': 0.1,  'plb': 0.5,  'pub': 3.0,  'ub': 50.0}),
     'sigma_spectral': types.MappingProxyType({'lb': 0.1,  'plb': 1.0,  'pub': 10.0, 'ub': 50.0}),
-    'kappa_motor':    types.MappingProxyType({'lb': sigma_to_kappa(80.0), 'plb': sigma_to_kappa(40.0),
-                                              'pub': sigma_to_kappa(5.0),  'ub': sigma_to_kappa(2.0)}),
-    'tau_prior':      types.MappingProxyType({'lb': 1.0/179.9**2, 'plb': 1.0/50.0**2,
-                                              'pub': 1.0/5.0**2,  'ub': 1.0/1.0**2}),
+    'kappa_motor':    types.MappingProxyType({
+        'lb': round(sigma_to_kappa(80.0), 4),
+        'plb': round(sigma_to_kappa(40.0), 4),
+        'pub': round(sigma_to_kappa(5.0), 4),
+        'ub': round(sigma_to_kappa(2.0), 4),
+    }),
+    'tau_prior':      types.MappingProxyType({
+        'lb': round(1.0/179.9**2, 6),
+        'plb': 0.0004,
+        'pub': 0.04,
+        'ub': 1.0,
+    }),
 })
 
 

@@ -473,7 +473,7 @@ DEFAULT_PARAMS = types.MappingProxyType({
 #: read-only mapping with keys ``'lb'``, ``'plb'``, ``'pub'``, ``'ub'``
 #: (lower / plausible-lower / plausible-upper / upper bounds).
 #: ``'kappa_motor'`` bounds are von Mises concentrations (higher = less noise).
-PARAM_BOUNDS = types.MappingProxyType({
+DEFAULT_PARAM_BOUNDS = types.MappingProxyType({
     'sigma_ild':      types.MappingProxyType({'lb': 0.1,  'plb': 0.5,  'pub': 3.0,  'ub': 50.0}),
     'sigma_spectral': types.MappingProxyType({'lb': 0.1,  'plb': 1.0,  'pub': 10.0, 'ub': 50.0}),
     'kappa_motor':    types.MappingProxyType({
@@ -672,7 +672,8 @@ def fit_listener_partial(sofa_path, obs_tbl, targets_coords,
     fixed_params : dict or None, default=None
         Mapping ``{parameter_name: value}`` for parameters held fixed.
         Anything not listed in ``params_to_fit`` and not present here
-        falls back to the module-level ``DEFAULT_PARAMS``.
+        falls back to :data:`DEFAULT_PARAMS`. Search bounds are taken from
+        :data:`DEFAULT_PARAM_BOUNDS`.
     subject_id : str or None, default=None
         Participant identifier; ``None`` uses every row of ``obs_tbl``.
     num_repetitions : int, default=200
@@ -756,7 +757,7 @@ def fit_listener_partial(sofa_path, obs_tbl, targets_coords,
                 bounds_key = 'tau_prior'
             else:
                 bounds_key = p
-            bounds = PARAM_BOUNDS[bounds_key]
+            bounds = DEFAULT_PARAM_BOUNDS[bounds_key]
             lb_list.append(np.log(bounds['lb']))
             plb_list.append(np.log(bounds['plb']))
             pub_list.append(np.log(bounds['pub']))

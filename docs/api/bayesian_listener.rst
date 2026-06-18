@@ -14,8 +14,8 @@ The single entry point for all inference and simulation workflows.
    :members:
    :inherited-members:
 
-Barumerli2023
--------------
+Auditory Representation
+-----------------------
 
 The concrete auditory representation used by the default workflow: ITD + ILD +
 monaural spectral amplitude envelopes (:footcite:t:`barumerli2026`).

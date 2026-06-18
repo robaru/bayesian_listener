@@ -12,6 +12,7 @@ Implements the procedure of :footcite:t:`barumerli2026`, §2.2:
 
 The high-level wrapper :func:`fit_listener` runs both stages.
 """
+import types
 import numpy as np
 from pathlib import Path
 import time
@@ -453,27 +454,33 @@ def negloglik(model, targets, responses, resp_targets_idx, sigmas_log,
 
 
 
-# Default parameter values and bounds
-# Note: kappa_motor and tau_prior are used internally during optimization
-DEFAULT_PARAMS = {
+#: Read-only mapping of default noise-parameter values.  Used as the
+#: fallback in :func:`fit_listener_partial` for any parameter that is
+#: neither in ``params_to_fit`` nor ``fixed_params``.  Pass ``fixed_params``
+#: to override individual values; do not mutate this object directly.
+DEFAULT_PARAMS = types.MappingProxyType({
     'sigma_itd': 0.569,
     'sigma_ild': 1.0,
     'sigma_spectral': 10.0,
-    'kappa_motor': sigma_to_kappa(15.0),  # ~14.2 (from 15 deg via Bessel)
-    'sigma_prior': 40.0,  # Still stored as sigma for model interface
-}
+    'kappa_motor': sigma_to_kappa(15.0),
+    'sigma_prior': 40.0,
+})
 
-# Bounds for fitting
-# kappa_motor: higher kappa = less noise (more concentrated)
-#   sigma 4° -> kappa ~190, sigma 60° -> kappa ~1.6
-# tau_prior = 1/sigma^2, so bounds are inverted
-PARAM_BOUNDS = {
-    'sigma_ild': {'lb': 0.1, 'plb': 0.5, 'pub': 3.0, 'ub': 50.0},
-    'sigma_spectral': {'lb': 0.1, 'plb': 1.0, 'pub': 10.0, 'ub': 50.0},
-    'kappa_motor': {'lb': sigma_to_kappa(80.0), 'plb': sigma_to_kappa(40.0),
-                    'pub': sigma_to_kappa(5.0), 'ub': sigma_to_kappa(2.0)},
-    'tau_prior': {'lb': 1.0/179.9**2, 'plb': 1.0/50.0**2, 'pub': 1.0/5.0**2, 'ub': 1.0/1.0**2},
-}
+#: Read-only mapping of BADS optimiser search bounds for each free parameter.
+#: Keys are ``'sigma_ild'``, ``'sigma_spectral'``, ``'kappa_motor'``, and
+#: ``'tau_prior'`` (precision :math:`\tau = 1/\sigma_{\mathrm{prior}}^2`,
+#: used internally for a better optimisation landscape).  Each value is a
+#: read-only mapping with keys ``'lb'``, ``'plb'``, ``'pub'``, ``'ub'``
+#: (lower / plausible-lower / plausible-upper / upper bounds).
+#: ``'kappa_motor'`` bounds are von Mises concentrations (higher = less noise).
+PARAM_BOUNDS = types.MappingProxyType({
+    'sigma_ild':      types.MappingProxyType({'lb': 0.1,  'plb': 0.5,  'pub': 3.0,  'ub': 50.0}),
+    'sigma_spectral': types.MappingProxyType({'lb': 0.1,  'plb': 1.0,  'pub': 10.0, 'ub': 50.0}),
+    'kappa_motor':    types.MappingProxyType({'lb': sigma_to_kappa(80.0), 'plb': sigma_to_kappa(40.0),
+                                              'pub': sigma_to_kappa(5.0),  'ub': sigma_to_kappa(2.0)}),
+    'tau_prior':      types.MappingProxyType({'lb': 1.0/179.9**2, 'plb': 1.0/50.0**2,
+                                              'pub': 1.0/5.0**2,  'ub': 1.0/1.0**2}),
+})
 
 
 def fit_listener(sofa_path, obs_tbl, targets_coords,
@@ -691,7 +698,7 @@ def fit_listener_partial(sofa_path, obs_tbl, targets_coords,
         fixed_params = {}
 
     # Build full parameter dict with defaults, then override with fixed values
-    all_params = DEFAULT_PARAMS.copy()
+    all_params = dict(DEFAULT_PARAMS)
     all_params.update(fixed_params)
 
     label = subject_id or Path(sofa_path).stem

@@ -84,7 +84,6 @@ nitpick_ignore = [
     ('py:class', 'function'),
     # Module-level data referenced by docstrings.
     ('py:data', 'METRIC_FUNCTIONS'),
-    ('py:data', 'DEFAULT_PARAMS'),
     # Submodule references (autodoc does not register module objects unless
     # an explicit automodule directive is used; we never use one).
     ('py:mod', 'bayesian_listener'),

@@ -33,13 +33,11 @@ Parameter conversion
 
 .. autofunction:: bayesian_listener.fitting.kappa_to_sigma
 
-Parameter bounds
-----------------
+Default parameters and bounds
+-----------------------------
 
-Default parameter values and search bounds are defined in the module-level
-constants ``bayesian_listener.fitting.DEFAULT_PARAMS`` and
-``bayesian_listener.fitting.PARAM_BOUNDS``.  Consult the source via the
-:guilabel:`[source]` link on :func:`~bayesian_listener.fitting.fit_listener`
-for the exact values.
+.. autodata:: bayesian_listener.fitting.DEFAULT_PARAMS
+
+.. autodata:: bayesian_listener.fitting.PARAM_BOUNDS
 
 .. footbibliography::

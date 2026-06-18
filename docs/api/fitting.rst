@@ -38,6 +38,6 @@ Default parameters and bounds
 
 .. autodata:: bayesian_listener.fitting.DEFAULT_PARAMS
 
-.. autodata:: bayesian_listener.fitting.PARAM_BOUNDS
+.. autodata:: bayesian_listener.fitting.DEFAULT_PARAM_BOUNDS
 
 .. footbibliography::

@@ -92,6 +92,7 @@ nitpick_ignore = [
     ('py:mod', 'bayesian_listener.fitting'),
     ('py:mod', 'bayesian_listener.utils'),
     ('py:mod', 'bayesian_listener.resample'),
+    ('py:mod', 'bayesian_listener.plotting'),
     ('py:mod', 'bayesian_listener.auditory_representation'),
 ]
 

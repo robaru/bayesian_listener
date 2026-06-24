@@ -35,6 +35,10 @@ An auditory model for simulating human sound localisation
    :target: https://doi.org/10.1051/aacus/2023006
    :alt: DOI
 
+.. image:: https://dl.circleci.com/status-badge/img/circleci/BeUU72xrVhZQnvbQs1NtoY/RS9s4ZVXdbRqp4wzT27zLN/tree/main.svg?style=shield&circle-token=CCIPRJ_KhBs7PQLxsRpyKQGpnW17H_8532931196534425ee26a2489db41df66a1ad231
+   :target: https://dl.circleci.com/status-badge/redirect/circleci/BeUU72xrVhZQnvbQs1NtoY/RS9s4ZVXdbRqp4wzT27zLN/tree/main
+   :alt: CircleCI
+
 |
 
 :mod:`bayesian_listener` is a Python package for simulating and fitting a
@@ -87,6 +91,16 @@ original model paper and its statistical validation:
 
 .. code-block:: bibtex
 
+   @article{barumerli2026,
+      author  = {R. Barumerli and F. Brinkmann and E. Zanoni and A. Hoyer
+                  and L. Picinali and M. Geronazzo},
+      title   = {Statistical validation and full-sphere extension of a {Bayesian}
+                  model for human static sound localisation},
+      journal = {Submitted to Acta Acustica},
+      year    = {2026},
+      url = {https://arxiv.org/abs/2606.24367}
+   }
+
    @article{barumerli2023,
      author  = {Barumerli, Roberto and Majdak, Piotr and Geronazzo, Michele
                 and Meijer, Demi and Avanzini, Federico and Baumgartner, Robert},
@@ -98,3 +112,5 @@ original model paper and its statistical validation:
      year    = {2023},
      doi     = {10.1051/aacus/2023006},
    }
+
+

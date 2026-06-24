@@ -49,11 +49,11 @@ See [Getting Started](https://bayesian_listener.readthedocs.io/en/latest/getting
 
 Barumerli, R., Majdak, P., Geronazzo, M., Meijer, D., Avanzini, F., & Baumgartner, R. (2023).
 *A Bayesian model for human directional localization of broadband static sound sources.*
-Acta Acustica, 7, 12. https://doi.org/10.1051/aacus/2023006
+Acta Acustica, 7, 12. [Paper](https://doi.org/10.1051/aacus/2023006)
 
 Barumerli, R., Brinkmann, F., Zanoni, E., Hoyer, A., Picinali, L., & Geronazzo, M. (2026).
 *Statistical validation and full-sphere extension of a Bayesian model for human static sound localisation.*
-Acta Acustica (in press).
+Acta Acustica (under review). [Pre-print](https://arxiv.org/abs/2606.24367)
 
 ## License
 

@@ -1,0 +1,29 @@
+/* Sidebar logo size. */
+.sidebar-logo {
+    max-width: 60px;
+}
+
+/* Breathing room between badges and intro paragraph. */
+.section > p:first-of-type {
+    margin-top: 1.5rem;
+}
+
+/* Transparent image backgrounds — keeps HRTF plots readable in both modes. */
+img {
+    background-color: transparent !important;
+}
+
+/* Icon styling for the landing-page card grid (Phase 2 will replace raw-HTML icons). */
+.icon-style {
+    font-size: 5.2rem;
+    margin: 1rem;
+    color: var(--color-brand-primary);
+}
+
+/* Right-hand "On this page" TOC: bump from Furo's default ~13px to 14px and
+   relax line-height so wrapped entries breathe.  Left sidebar (.sidebar-tree)
+   is intentionally not affected. */
+.toc-tree li, .toc-tree a {
+    font-size: 0.875rem;
+    line-height: 1.45;
+}

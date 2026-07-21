@@ -170,29 +170,109 @@ class Barumerli2023(_AuditoryRepresentation):
 
 @dataclass
 class Barumerli2023pge(_AuditoryRepresentation):
-    """ITD + ILD + spectral-gradient representation — stub.
+    r"""ITD + ILD + positive spectral-gradient representation (issue #22).
 
-    .. warning::
+    Translated from AMT ``baumgartner2014_gradientextraction.m`` (the
+    ``'positive'`` mode, the only one used by :footcite:t:`barumerli2023`),
+    as invoked by ``barumerli2023_featureextraction.m`` for the ``'pge'``
+    monaural feature.  Simulates the on-centre/off-surround inhibition
+    between AN, type II and type IV neurons of the dorsal cochlear nucleus:
+    each output band is the difference between the magnitude 1 ERB above and
+    the magnitude at the current band, half-wave rectified so that only
+    *positive* gradients survive.  Unlike :class:`Barumerli2023`, this class
+    takes the raw monaural spectral cues (as produced by
+    :func:`~bayesian_listener.utils.compute_features`) and derives the
+    gradient itself in ``__post_init__``.
 
-       This convention is registered for future use (issue #22) but is not
-       implemented.  Instantiating it raises :class:`NotImplementedError`,
-       and :meth:`sigma_matrix` does the same.
+    Attributes
+    ----------
+    convention : str
+        Fixed to ``'barumerli2023pge'``.
+    coords : :class:`pyfar.Coordinates`
+        Source positions, one per row.
+    itd : :class:`numpy.ndarray`
+        Warped interaural time differences, shape ``(n_dirs, 1)``.
+    ild : :class:`numpy.ndarray`
+        Interaural level differences in dB, shape ``(n_dirs, 1)``.
+    spectral_cues : :class:`numpy.ndarray`
+        Raw monaural log-amplitude spectra in dB, shape
+        ``(n_dirs, n_freqs, 2)`` (as returned by
+        :func:`~bayesian_listener.utils.compute_features`).
+    spectral_gradient : :class:`numpy.ndarray`
+        Positive spectral gradient profile, shape
+        ``(n_dirs, n_freqs - 1, 2)``.  Computed in ``__post_init__``.
+    freqs : :class:`numpy.ndarray`
+        Centre frequencies of the gradient profile (geometric mean of the
+        two bins entering each gradient), shape ``(n_freqs - 1,)``.
+        Overwrites the input filterbank frequencies passed at construction.
+    features : :class:`numpy.ndarray`
+        Concatenation ``[itd, ild, gradient_L, gradient_R]`` of shape
+        ``(n_dirs, 2 + 2*(n_freqs - 1))``.
+
+    Notes
+    -----
+    ``spectral_cues`` is expected to come from an ERB-spaced filterbank with
+    1-ERB spacing (:func:`~bayesian_listener.utils.compute_features`'s
+    default), so the gradient is simply the half-wave-rectified difference
+    between adjacent bands.
     """
 
     convention: str = 'barumerli2023pge'
     coords: pf.Coordinates = None
     itd: np.ndarray = None
     ild: np.ndarray = None
-    spectral_gradient: np.ndarray = None
+    spectral_cues: np.ndarray = None
     freqs: np.ndarray = None
 
     def __post_init__(self):
-        """Not implemented."""
-        raise NotImplementedError('barumerli2023pge is not yet implemented.')
+        """Derive the positive spectral gradient from :attr:`spectral_cues`."""
+        self._input_freqs = self.freqs
+
+        # Positive spectral gradient: half-wave-rectified difference between
+        # adjacent (1 ERB apart) bands.
+        gradient = self.spectral_cues[:, 1:, :] - self.spectral_cues[:, :-1, :]
+        gradient[gradient < 0] = 0.0
+        self.spectral_gradient = gradient
+
+        # New centre frequencies: geometric mean of the two contributing bins.
+        self.freqs = np.sqrt(self.freqs[:-1] * self.freqs[1:])
+
+        self.features = np.hstack([self.itd,
+                                   self.ild,
+                                   self.spectral_gradient[:, :, 0],
+                                   self.spectral_gradient[:, :, 1]])
+
+    def __getitem__(self, idx):
+        """Return a new :class:`Barumerli2023pge` with the requested rows."""
+        if isinstance(idx, (int, np.integer)):
+            idx = [idx]
+        return Barumerli2023pge(
+            coords=self.coords[idx],
+            itd=self.itd[idx],
+            ild=self.ild[idx],
+            spectral_cues=self.spectral_cues[idx],
+            freqs=self._input_freqs,
+        )
 
     def sigma_matrix(self, parameters: dict) -> np.ndarray:
-        """Not implemented."""
-        raise NotImplementedError('barumerli2023pge is not yet implemented.')
+        r"""Diagonal sensory covariance, analogous to :meth:`Barumerli2023.sigma_matrix`.
+
+        Parameters
+        ----------
+        parameters : dict
+            Must contain keys ``sigma_itd`` (dimensionless), ``sigma_ild``
+            (dB), ``sigma_spectral`` (dB).
+
+        Returns
+        -------
+        :class:`numpy.ndarray`
+            Diagonal covariance of shape ``(n_features, n_features)``.
+        """
+        return np.diag(np.hstack([
+            parameters['sigma_itd']**2,
+            parameters['sigma_ild']**2,
+            np.repeat(parameters['sigma_spectral']**2, self.freqs.shape[0] * 2),
+        ]))
 
 
 CONVENTIONS = {

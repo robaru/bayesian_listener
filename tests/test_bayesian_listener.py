@@ -299,11 +299,36 @@ def test_sigma_motor_roundtrip():
         am.parameters['kappa_motor'], original_kappa, rtol=1e-4)
 
 
-def test_barumerli2023pge_not_implemented():
-    """Instantiating Barumerli2023pge raises NotImplementedError."""
-    with pytest.raises(NotImplementedError):
-        Barumerli2023pge(coords=None, itd=None, ild=None,
-                         spectral_gradient=None, freqs=None)
+def test_barumerli2023pge_features():
+    """Barumerli2023pge derives a positive spectral gradient from spectral_cues."""
+    rng = np.random.default_rng(0)
+    n_dirs = 5
+    freqs = utils.erb_space([7e2, 18e3])
+    n_freqs = freqs.size
+    coords = pf.Coordinates(rng.normal(size=n_dirs),
+                             rng.normal(size=n_dirs),
+                             rng.normal(size=n_dirs))
+    itd = rng.normal(size=(n_dirs, 1))
+    ild = rng.normal(size=(n_dirs, 1))
+    spectral_cues = rng.normal(size=(n_dirs, n_freqs, 2))
+
+    ar = Barumerli2023pge(coords=coords, itd=itd, ild=ild,
+                           spectral_cues=spectral_cues, freqs=freqs)
+
+    assert ar.spectral_gradient.shape[0] == n_dirs
+    assert ar.spectral_gradient.shape[2] == 2
+    assert ar.freqs.shape[0] == ar.spectral_gradient.shape[1]
+    assert np.all(ar.spectral_gradient >= 0)
+    n_gfreqs = ar.freqs.shape[0]
+    assert ar.features.shape == (n_dirs, 2 + 2 * n_gfreqs)
+
+    Sigma = ar.sigma_matrix(
+        {'sigma_itd': 0.569, 'sigma_ild': 1.0, 'sigma_spectral': 10.4})
+    assert Sigma.shape == (ar.features.shape[1],) * 2
+
+    subset = ar[[0, 2]]
+    assert subset.features.shape == (2, ar.features.shape[1])
+    np.testing.assert_allclose(subset.freqs, ar.freqs)
 
 
 def test_gammatone_minimum_ir_length_numerical_error():

@@ -1,6 +1,7 @@
 import numpy as np
 import pyfar as pf
-from bayesian_listener.resample import resample_two_step, resample, find_max_order
+from bayesian_listener.resample import (
+    resample_two_step, resample, find_max_order, resample_barumerli2023)
 
 
 def make_grid():
@@ -87,3 +88,37 @@ def test_resample_kwargs_forwarded():
     out_default, _ = resample(cues, coords, method='sh')
     out_custom, _ = resample(cues, coords, method='sh', regularisation_coefficient=1e-1)
     assert not np.allclose(out_default, out_custom)
+
+
+def _dense_sphere_grid(az_step=10, el_lim=80, el_step=10):
+    """Dense full-sphere grid, well-conditioned for order-15 SH."""
+    az = np.deg2rad(np.arange(0, 360, az_step))
+    el = np.deg2rad(np.arange(-el_lim, el_lim + 1, el_step))
+    az_grid, el_grid = np.meshgrid(az, el)
+    return pf.Coordinates.from_spherical_elevation(
+        az_grid.ravel(), el_grid.ravel(), np.ones(az_grid.size))
+
+
+def test_resample_barumerli2023_elevation_convention():
+    """barumerli2023 SH interpolation must use the elevation convention on the
+    input side, matching build_Y / the output template.
+
+    Regression test for the colatitude-vs-elevation mismatch introduced when
+    spaudiopy was replaced by build_Y: the input coordinates were read as
+    ``spherical_colatitude`` and fed to build_Y (which expects elevation),
+    warping the interpolated cues. We resample a smooth degree-1 field,
+    ``sin(elevation)`` (undamped by the Tikhonov regulariser, which only zeroes
+    orders >= 3), onto directions of known elevation and require recovery.
+    """
+    coords = _dense_sphere_grid()
+    cues = np.sin(coords.spherical_elevation[:, 1])[:, None]
+
+    t_az = np.deg2rad(np.array([0, 90, 180, 270, 45]))
+    t_el = np.deg2rad(np.array([-60, -30, 0, 30, 60]))
+    template = pf.Coordinates.from_spherical_elevation(
+        t_az, t_el, np.ones(len(t_az)))
+
+    out, template_out = resample_barumerli2023(cues, coords, template)
+
+    np.testing.assert_allclose(out.ravel(), np.sin(t_el), atol=1e-6)
+    assert template_out.csize == template.csize

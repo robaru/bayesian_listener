@@ -447,9 +447,14 @@ def resample_barumerli2023(values,
     dirs_SH = np.transpose([azimuth, colatidude])
 
     # transform signal to SH domain
-    c = coords_in.spherical_colatitude
+    # NOTE: build_Y expects [azimuth, elevation] (it constructs coordinates
+    # via pf.Coordinates.from_spherical_elevation). The output/template side
+    # above uses spherical_elevation, so the input side must too -- feeding
+    # spherical_colatitude here fits the SH expansion at the wrong elevations
+    # (colatitude = 90 deg - elevation), warping the interpolated cues.
+    c = coords_in.spherical_elevation
     azi = c[..., 0]
-    zen = c[..., 1]
+    ele = c[..., 1]
 
     # get SH basis on new directions
     int_new = build_Y(dirs_SH, N_sph)
@@ -459,7 +464,7 @@ def resample_barumerli2023(values,
 
     if not flag_regularisation:
         # get SH matrix for input positions and transform to SH domain
-        Y_in = build_Y(np.stack([azi, zen], axis=1), N_sph)
+        Y_in = build_Y(np.stack([azi, ele], axis=1), N_sph)
         cues_SH = [np.linalg.pinv(Y_in) @ c for c in cues]
     else:
         # regularization
@@ -468,7 +473,7 @@ def resample_barumerli2023(values,
         SIG[1:(2+1)**2,1:(2+1)**2] = 0
 
         # get SH basis on old directions
-        Y_N_tik = build_Y(np.stack([azi, zen], axis=1), N_sph)
+        Y_N_tik = build_Y(np.stack([azi, ele], axis=1), N_sph)
         # Compute regularized inverse once
         Y_inv_reg = np.linalg.solve(
             np.transpose(Y_N_tik)@Y_N_tik+lambda_val*SIG,

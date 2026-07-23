@@ -162,9 +162,9 @@ def test_outputs_are_unit_norm():
 
 def test_scatter_rejects_bad_input():
     v = unit_dirs(10)
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="kappa must be positive"):
         scatter_von_mises(v, -1.0, seed=0)
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match=r"shape \(n, 3\) or \(3,\)"):
         scatter_von_mises(np.zeros((10, 2)), 10.0, seed=0)
 
 

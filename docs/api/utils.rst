@@ -30,6 +30,8 @@ Sampling
 
 .. autofunction:: bayesian_listener.utils.scatter_von_mises
 
+.. autofunction:: bayesian_listener.utils.randvmf
+
 Caching
 -------
 

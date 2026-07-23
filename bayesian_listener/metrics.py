@@ -97,6 +97,7 @@ def localization_error(targets, estimations, metric,
     if isinstance(metric, list):
         return {m: localization_error(targets, estimations, m,
                                       auxiliary_output=auxiliary_output,
+                                      degrees=degrees,
                                       **kwargs)
                 for m in metric}
 
@@ -687,22 +688,30 @@ def querrMiddlebrooks(true, est):
     description=(
         "Great-circle angular error (in radians).\n\t"
         "Computed as arccos of the dot product between target\n\t"
-        "and estimation unit vectors.\n\t"
+        "and estimation directions, each normalised to unit length,\n\t"
+        "so the result is independent of the source distance.\n\t"
         "Returns the mean angular error across all observations."),
     ylabel="Angular error (rad)",
 )
 def angular_error(true, est):
-    r"""Mean great-circle angular error between target and estimation unit vectors.
+    r"""Mean great-circle angular error between target and estimation directions.
 
     Computes :math:`\bar{\theta} = \frac{1}{N} \sum \arccos(
-    \mathbf{t}_i \cdot \hat{\mathbf{e}}_i)` with the dot product clipped
-    to :math:`[-1, 1]` for numerical safety.
+    \hat{\mathbf{t}}_i \cdot \hat{\mathbf{e}}_i)` where
+    :math:`\hat{\mathbf{x}} = \mathbf{x} / \lVert \mathbf{x} \rVert`, with the
+    dot product clipped to :math:`[-1, 1]` for numerical safety.
+
+    Both inputs are normalised to unit length, so the result depends only on
+    direction and is invariant to the source distance.  This matters because
+    HRTF datasets are measured at different radii (e.g. 1.5 m vs 3.0 m); using
+    the raw dot product would scale it by :math:`r_{\text{true}} r_{\text{est}}`
+    and saturate the ``arccos`` clip for all but the largest angular errors.
 
     Parameters
     ----------
     true : :class:`numpy.ndarray`
         Target directions in Cartesian coordinates, shape ``(..., 3)``;
-        each row should be unit-norm.
+        any non-zero norm is accepted.
     est : :class:`numpy.ndarray`
         Estimated directions, same shape and convention.
 
@@ -710,9 +719,22 @@ def angular_error(true, est):
     -------
     float
         Mean angular error in radians.
+
+    Raises
+    ------
+    ValueError
+        If any target or estimation vector has zero length, in which case its
+        direction is undefined.
     """
-    # Dot product row-wise, clipped to [-1, 1] for numerical safety
-    dots = np.sum(true * est, axis=-1)
+    true_norm = np.linalg.norm(true, axis=-1, keepdims=True)
+    est_norm = np.linalg.norm(est, axis=-1, keepdims=True)
+    if np.any(true_norm == 0) or np.any(est_norm == 0):
+        raise ValueError(
+            "angular_error: zero-length direction vector; the direction of "
+            "the origin is undefined.")
+
+    # Dot product row-wise on unit vectors, clipped for numerical safety
+    dots = np.sum((true / true_norm) * (est / est_norm), axis=-1)
     dots = np.clip(dots, -1.0, 1.0)
     angles = np.arccos(dots)
     return np.mean(angles)

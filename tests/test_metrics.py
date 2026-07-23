@@ -444,6 +444,42 @@ def test_localization_error_mixed_kwargs_warns_and_filters():
     assert not np.isclose(result, expected_default, rtol=1e-10)
 
 
+def test_localization_error_metric_list_forwards_degrees():
+    """
+    Test that a list of metrics honours `degrees`, matching the scalar calls.
+    """
+    targets = pf.Coordinates.from_spherical_side(
+        lateral=np.zeros(4),
+        polar=np.deg2rad(np.array([0, 30, 60, 90])),
+        radius=np.ones(4),
+    )
+    estimations = pf.Coordinates.from_spherical_side(
+        lateral=np.deg2rad(np.array([10, 10, 10, 10])),
+        polar=np.deg2rad(np.array([20, 50, 80, 110])),
+        radius=np.ones(4),
+    )
+
+    metrics = ['rmsL', 'angular_error', 'querrMiddlebrooks']
+
+    radians = localization_error(targets, estimations, metrics)
+    degrees = localization_error(targets, estimations, metrics, degrees=True)
+
+    for name in metrics:
+        scalar = localization_error(
+            targets, estimations, name, degrees=True)
+        assert np.isclose(degrees[name], scalar, rtol=1e-10)
+
+    # radian-valued metrics are actually converted ...
+    for name in ['rmsL', 'angular_error']:
+        assert np.isclose(degrees[name], np.rad2deg(radians[name]),
+                          rtol=1e-10)
+        assert not np.isclose(degrees[name], radians[name], rtol=1e-10)
+
+    # ... while a percentage output is left alone
+    assert np.isclose(degrees['querrMiddlebrooks'],
+                      radians['querrMiddlebrooks'], rtol=1e-10)
+
+
 # =============================================================================
 # Test individual metrics with known outputs
 # =============================================================================
@@ -1095,22 +1131,39 @@ def test_angular_error_non_unit_vectors():
     """
     Test angular_error handles non-unit vectors correctly via normalization.
     """
-    # Both point in the same direction as [1,0,0] vs [0,1,0]
+    # 30° apart, but measured on a 1.5 m radius sphere as in the HRTF data.
+    # The raw dot product would be 1.5**2 * cos(30°) = 1.95 > 1 and saturate
+    # the arccos clip to an error of 0.
+    radius = 1.5
+    angle = np.deg2rad(30)
     targets = pf.Coordinates.from_cartesian(
-        x=np.array([2.0]),
+        x=np.array([radius]),
         y=np.array([0.0]),
         z=np.array([0.0]),
     )
     estimations = pf.Coordinates.from_cartesian(
-        x=np.array([0.0]),
-        y=np.array([2.0]),
+        x=np.array([radius * np.cos(angle)]),
+        y=np.array([radius * np.sin(angle)]),
         z=np.array([0.0]),
     )
 
-    # dot(t, e) = 0 → arccos(0) = π/2 regardless of magnitude
-    # (assuming the vectors are used as-is, not normalized)
     error = localization_error(targets, estimations, 'angular_error')
-    assert np.isclose(error, np.pi / 2, rtol=1e-5)
+    assert np.isclose(error, angle, rtol=1e-5)
+
+    # Mixed radii (1.5 m individual vs 3.0 m SH) must give the same answer
+    estimations_far = pf.Coordinates.from_cartesian(
+        x=np.array([3.0 * np.cos(angle)]),
+        y=np.array([3.0 * np.sin(angle)]),
+        z=np.array([0.0]),
+    )
+    error_far = localization_error(targets, estimations_far, 'angular_error')
+    assert np.isclose(error_far, angle, rtol=1e-5)
+
+    # Orthogonal vectors: π/2 regardless of magnitude
+    ortho = pf.Coordinates.from_cartesian(
+        x=np.array([0.0]), y=np.array([2.0]), z=np.array([0.0]))
+    error_ortho = localization_error(targets, ortho, 'angular_error')
+    assert np.isclose(error_ortho, np.pi / 2, rtol=1e-5)
 
 
 def test_angular_error_registered_as_cartesian():

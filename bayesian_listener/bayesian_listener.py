@@ -664,7 +664,12 @@ class BayesianListener:
               circular SD with
               :func:`~bayesian_listener.fitting.sigma_to_kappa`.
         seed : int or None, default=None
-            Seed for the motor-noise RNG.
+            Seed for the motor-noise RNG.  It is consumed **once** for the
+            whole ``(trials, repetitions)`` block, so each response receives an
+            independent perturbation while repeated calls with the same seed
+            reproduce the same result.  See
+            :func:`~bayesian_listener.utils.scatter_von_mises` for the full
+            seeding semantics.
 
         Returns
         -------
@@ -708,9 +713,14 @@ class BayesianListener:
             kappa_motor = self.parameters['kappa_motor']
 
         if kappa_motor not in [False, 0]:
-            for rt in range(repetitions):
-                estimations[:, rt, :] = utils.scatter_von_mises(
-                    estimations[:, rt, :], kappa_motor, seed=seed)
+            # Scatter the whole (trials, repetitions) block in ONE call: the
+            # seed is then consumed exactly once, so every response gets an
+            # independent draw.  Looping here and passing the same `seed` to
+            # each call would give every repetition the identical scatter.
+            shape = estimations.shape
+            estimations = utils.scatter_von_mises(
+                estimations.reshape(-1, 3), kappa_motor,
+                seed=seed).reshape(shape)
 
         return pf.Coordinates.from_cartesian(estimations[..., 0],
                                              estimations[..., 1],

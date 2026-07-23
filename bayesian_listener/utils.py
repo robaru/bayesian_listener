@@ -421,12 +421,97 @@ def itdestimator(signals, fs=None):
 # SPHERICAL UTILITIES
 # -----------------------------------
 
+#: Row-block size for the vectorised von Mises–Fisher rotation.  Purely a
+#: memory/performance knob: because ``U``/``psi`` are drawn for all rows up
+#: front, the output is *independent* of this value (see
+#: :func:`scatter_von_mises`).
+_VMF_CHUNK = 50_000
+
+
+def _vmf_rotate_to(mu, y):
+    r"""Rotate north-pole-referenced samples ``y`` onto the mean directions ``mu``.
+
+    Vectorised equivalent of the rotation step in :func:`randvmf`, using the
+    Rodrigues formula in *vector* form::
+
+        v_rot = v cosθ + (k × v) sinθ + k (k·v)(1 − cosθ)
+
+    Two notes for anyone comparing this against :func:`randvmf`:
+
+    * :func:`rodriguesrotation` returns ``M.T`` (see its final ``return``), so
+      the scalar step ``y = y @ Rg`` is ``y @ M.T``, which for a row vector
+      equals ``M @ y``.  This function therefore applies the *standard* ``M``.
+      Do **not** "simplify" it to ``y @ M`` — that is the inverse rotation.
+    * With the reference axis at ``+z`` we have ``cosθ = mu_z`` and
+      ``sinθ = ‖(+z) × mu‖``, so no ``arccos``/``cos``/``sin`` is needed.
+
+    Building explicit ``(n, 3, 3)`` matrices was measured to be ~3.6× slower
+    and ~3× heavier in peak memory than this form; the contraction is cheap,
+    it is *constructing* ``M`` that costs.
+
+    Parameters
+    ----------
+    mu : :class:`numpy.ndarray`
+        Unit mean directions, shape ``(n, 3)``.
+    y : :class:`numpy.ndarray`
+        Samples drawn about ``+z``, shape ``(n, 3)``.
+
+    Returns
+    -------
+    :class:`numpy.ndarray`
+        Rotated samples, shape ``(n, 3)``.
+    """
+    axis = np.cross(np.array([0., 0., 1.]), mu)
+    nrm = np.linalg.norm(axis, axis=1, keepdims=True)      # = sinθ
+
+    # Degenerate axis: mu is parallel to ±z, so the cross product vanishes and
+    # the scalar implementation would divide by zero (NaN at the south pole).
+    ok = nrm[:, 0] > np.finfo(float).eps
+    k = np.zeros_like(axis)
+    k[ok] = axis[ok] / nrm[ok]
+
+    ct = mu[:, 2:3]                                        # = cosθ
+    kdy = np.sum(k * y, axis=1, keepdims=True)
+    out = y * ct + np.cross(k, y) * nrm + k * kdy * (1.0 - ct)
+
+    # mu ≈ +z: identity.  mu ≈ -z: rotate by π (flip y and z).
+    if not np.all(ok):
+        south = ~ok & (mu[:, 2] < 0)
+        out[~ok] = y[~ok]
+        out[south] = y[south] * np.array([1., -1., -1.])
+    return out
+
+
 def scatter_von_mises(dirs, kappa, seed = None):
     r"""Perturb unit-direction vectors with von Mises–Fisher noise.
 
     Implements Eq. 7 of :footcite:t:`barumerli2023`: each input direction is replaced
     by a sample from :math:`\mathrm{vMF}(\boldsymbol{\mu}_i, \kappa)`.
     The output preserves the input shape.
+
+    The scalar, per-direction reference implementation is :func:`randvmf`
+    below; it is kept as the readable specification of the algorithm
+    (Rubinstein 1981, Fisher et al. 1987).  This function is its vectorised
+    equivalent and must produce the same distribution.
+
+    ``U`` and ``psi`` are drawn for **all** rows up front from a single
+    generator, and only the deterministic sample-and-rotate step is chunked
+    (``_VMF_CHUNK`` rows at a time).  That keeps peak memory roughly flat in
+    ``n`` while making the result *independent* of the chunk size.
+
+    .. warning::
+
+       The ``seed`` is consumed **once per call**.  Within a call every
+       direction receives an independent draw; two calls with the same seed
+       and the same input return identical output (intended reproducibility).
+
+       Therefore: **use one seeded call per simulation.**  Calling this
+       function repeatedly with a fixed ``seed`` — for example once per
+       repetition inside a loop — gives every batch the *same* scatter and
+       silently removes trial-to-trial variability, which is a subtle way to
+       under-estimate response noise.  If several calls are unavoidable,
+       derive independent substreams with
+       ``np.random.SeedSequence(seed).spawn(k)``, or pass ``seed=None``.
 
     Parameters
     ----------
@@ -437,7 +522,8 @@ def scatter_von_mises(dirs, kappa, seed = None):
         Von Mises–Fisher concentration; higher values yield tighter samples.
         Must be positive.
     seed : int or None, default=None
-        Seed forwarded to :func:`numpy.random.default_rng`.
+        Seed forwarded to :func:`numpy.random.default_rng`.  See the warning
+        above for the semantics.
 
     Returns
     -------
@@ -450,7 +536,7 @@ def scatter_von_mises(dirs, kappa, seed = None):
         If ``dirs`` does not have 3 components in its last dimension, or
         if ``kappa`` is not positive.
     """
-    if not (dirs.shape[1] == 3 or dirs.size == 3):
+    if not (dirs.ndim >= 2 and dirs.shape[-1] == 3) and dirs.size != 3:
         raise ValueError(
             "dirs must be of shape (n, 3) or (3,); "
             f"got shape {dirs.shape}.")
@@ -458,16 +544,34 @@ def scatter_von_mises(dirs, kappa, seed = None):
         raise ValueError("kappa must be positive.")
 
     dirs = np.squeeze(dirs)
+    scalar_input = dirs.ndim == 1
+    mu = np.atleast_2d(dirs).astype(float, copy=False)
+    n = mu.shape[0]
 
-    dirs_new = np.zeros_like(dirs)
+    # Single generator for the whole call; all randomness is drawn here so the
+    # chunk loop below is deterministic (and the result chunk-size invariant).
+    rng = np.random.default_rng(seed)
+    U = rng.random(n)
+    psi = 2. * np.pi * rng.random(n)
 
-    if dirs.ndim > 1:
-        for i in range(dirs.shape[0]):
-            dirs_new[i, :] = randvmf(kappa, dirs[i, :], seed=seed)
-    else:
-        dirs_new = randvmf(kappa, dirs, seed=seed)
+    kappaS = np.sign(kappa)
+    kappa = abs(kappa)
 
-    return dirs_new
+    out = np.empty((n, 3), dtype=float)
+    for start in range(0, n, _VMF_CHUNK):
+        sl = slice(start, min(start + _VMF_CHUNK, n))
+        # density: Rubinstein 81, p.39; Fisher 87, p.59
+        x = kappaS * np.log(
+            2. * U[sl] * np.sinh(kappa) + np.exp(-kappa)) / kappa
+        s_x = np.sqrt(np.maximum(1. - x ** 2., 0.))
+        y = np.column_stack(
+            [np.cos(psi[sl]) * s_x, np.sin(psi[sl]) * s_x, x])
+        # normalise per block so no full-size copy of `mu` is materialised
+        block = mu[sl]
+        block = block / np.linalg.norm(block, axis=1, keepdims=True)
+        out[sl] = _vmf_rotate_to(block, y)
+
+    return out[0] if scalar_input else out
 
 def randvmf(kappa, mu, seed = None):
     r"""Draw a single sample from a 3-D von Mises–Fisher distribution.
@@ -476,6 +580,19 @@ def randvmf(kappa, mu, seed = None):
     Fisher et al. (1987): sample on a vMF aligned with the north pole, then
     rotate to align with ``mu`` via a Rodrigues rotation.
 
+    This is the readable, single-direction *reference* implementation.  For
+    arrays of directions use :func:`scatter_von_mises`, which is the
+    vectorised equivalent.
+
+    .. warning::
+
+       A fresh generator is constructed on **every call**, so calling this in
+       a loop with a fixed ``seed`` makes every iteration return the *same*
+       sample — a constant rotation rather than independent noise.  Prefer
+       :func:`scatter_von_mises` for more than one direction; if you must loop
+       here, pass ``seed=None`` or distinct seeds
+       (``np.random.SeedSequence(seed).spawn(k)``).
+
     Parameters
     ----------
     kappa : float
@@ -483,7 +600,8 @@ def randvmf(kappa, mu, seed = None):
     mu : :class:`numpy.ndarray`
         Mean direction (unit vector), shape ``(3,)``.
     seed : int or None, default=None
-        Seed forwarded to :func:`numpy.random.default_rng`.
+        Seed forwarded to :func:`numpy.random.default_rng`.  See the warning
+        above.
 
     Returns
     -------
@@ -515,13 +633,20 @@ def randvmf(kappa, mu, seed = None):
 
     mu = mu / np.linalg.norm(mu)
 
-    if np.linalg.norm(mu - Np) > np.finfo(float).eps:
-        if mu[2] != 1:
-            Ux = np.cross(Np, mu.T)
-            Ux = Ux / np.linalg.norm(Ux)
-            thetaX = np.arccos(mu[2])
-            Rg = rodriguesrotation(Ux * thetaX)
-            y = y @ Rg
+    # Rotate the north-pole sample onto mu.  The rotation axis degenerates
+    # when mu is parallel to ±z: at +z the rotation is the identity, and at
+    # -z the cross product vanishes (dividing by its norm used to yield NaN).
+    Ux = np.cross(Np, mu.T)
+    Ux_norm = np.linalg.norm(Ux)
+    if Ux_norm > np.finfo(float).eps:
+        thetaX = np.arccos(np.clip(mu[2], -1., 1.))
+        # NOTE: rodriguesrotation returns M.T, so `y @ Rg` applies the
+        # standard Rodrigues matrix M to y.  See _vmf_rotate_to for the
+        # vectorised form of this same step.
+        y = y @ rodriguesrotation(Ux / Ux_norm * thetaX)
+    elif mu[2] < 0:
+        # south pole: rotation by pi about the x-axis
+        y = y * np.array([1., -1., -1.])
 
     return y
 

@@ -974,11 +974,61 @@ def _read_pkl(pkl_path):
 
 
 # --- public cache helpers ---
-# Each HRTF gets one pickle: {'target': ..., 'templates': {'SHMAX': ..., ...}}
+# Each HRTF gets one pickle holding a format stamp, a mapping from feature key to
+# target representation, and a mapping from feature key to interpolation method to
+# template representation.
 # The index has one row per HRTF (sofa_name + file_hash), no interpolation column.
+# ``feature_key`` (see :func:`feature_cache_key`) covers every argument that changes
+# the extracted features, so targets differing only in e.g. ``reference`` or
+# ``halfwave_rectifier`` can no longer collide.
 
-def cache_load_target(cache_dir, sofa_file):
-    """Load the cached target for a SOFA file, or ``None`` if not found."""
+_CACHE_FORMAT = 2
+
+
+def feature_cache_key(convention, spectral_range, halfwave_rectifier, reference):
+    """Build the cache key identifying one set of feature-extraction parameters.
+
+    Every argument that changes the output of :func:`compute_features` must appear
+    here, otherwise two differently-computed targets collide in the cache and one is
+    silently served for the other.
+
+    Parameters
+    ----------
+    convention : str
+        Auditory representation name, e.g. ``'Barumerli2023'``.
+    spectral_range : list of float
+        ``[low_Hz, high_Hz]`` limits of the gammatone filterbank.
+    halfwave_rectifier : bool
+        Whether half-wave rectification is applied before the per-band mean.
+    reference : {'frontal', 'global', 'none'}
+        Level reference used to normalise the HRIRs.
+
+    Returns
+    -------
+    str
+        Stable key, e.g. ``'Barumerli2023|hw=True|ref=frontal|sr=700.0-18000.0'``.
+    """
+    low, high = (float(v) for v in spectral_range)
+    return (f'{convention}|hw={bool(halfwave_rectifier)}|ref={reference}|'
+            f'sr={low}-{high}')
+
+
+def _read_pkl_versioned(pkl_path):
+    """Read a cache pickle, returning an empty entry if absent or written by an older format."""
+    empty = {'format': _CACHE_FORMAT, 'targets': {}, 'templates': {}}
+    if not Path(pkl_path).exists():
+        return empty
+    try:
+        data = _read_pkl(pkl_path)
+    except Exception:
+        return empty
+    if data.get('format') != _CACHE_FORMAT:
+        return empty
+    return data
+
+
+def cache_load_target(cache_dir, sofa_file, feature_key):
+    """Load the cached target for a SOFA file and feature key, or ``None`` if not found."""
     cache_dir = Path(cache_dir)
     df = _load_index(cache_dir)
     if df.empty:
@@ -987,17 +1037,12 @@ def cache_load_target(cache_dir, sofa_file):
     row = _find_index_row(df, Path(sofa_file).name, file_hash)
     if row is None:
         return None
-    pkl_path = cache_dir / row['pkl_file']
-    if not pkl_path.exists():
-        return None
-    try:
-        return _read_pkl(pkl_path).get('target')
-    except Exception:
-        return None
+    data = _read_pkl_versioned(cache_dir / row['pkl_file'])
+    return data.get('targets', {}).get(feature_key)
 
 
-def cache_load_template(cache_dir, sofa_file, interpolation):
-    """Load a cached template for a SOFA file and interpolation method, or ``None``."""
+def cache_load_template(cache_dir, sofa_file, feature_key, interpolation):
+    """Load a cached template for a SOFA file, feature key, and interpolation method."""
     cache_dir = Path(cache_dir)
     df = _load_index(cache_dir)
     if df.empty:
@@ -1006,17 +1051,12 @@ def cache_load_template(cache_dir, sofa_file, interpolation):
     row = _find_index_row(df, Path(sofa_file).name, file_hash)
     if row is None:
         return None
-    pkl_path = cache_dir / row['pkl_file']
-    if not pkl_path.exists():
-        return None
-    try:
-        return _read_pkl(pkl_path).get('templates', {}).get(interpolation)
-    except Exception:
-        return None
+    data = _read_pkl_versioned(cache_dir / row['pkl_file'])
+    return data.get('templates', {}).get(feature_key, {}).get(interpolation)
 
 
-def cache_save_target(cache_dir, sofa_file, target):
-    """Save *target* to the HRTF pickle, creating the cache entry if needed."""
+def _cache_entry(cache_dir, sofa_file):
+    """Return ``(index, pkl_path, data, row_exists)`` for one SOFA file's cache entry."""
     cache_dir = Path(cache_dir)
     cache_dir.mkdir(parents=True, exist_ok=True)
     df = _load_index(cache_dir)
@@ -1026,62 +1066,41 @@ def cache_save_target(cache_dir, sofa_file, target):
 
     if row is not None:
         pkl_path = cache_dir / row['pkl_file']
-        try:
-            data = _read_pkl(pkl_path)
-        except Exception:
-            data = {'templates': {}}
-        data['target'] = target
-        _write_pkl(pkl_path, data)
-    else:
-        timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
-        pkl_filename = f"{Path(sofa_name).stem}_{file_hash[:8]}_{timestamp}.pkl"
-        pkl_path = cache_dir / pkl_filename
-        _write_pkl(pkl_path, {'target': target, 'templates': {}})
-        # Invalidate stale entries for the same SOFA name with a different hash.
-        stale = df[(df['sofa_name'] == sofa_name) & (df['file_hash'] != file_hash)]
-        for _, old_row in stale.iterrows():
-            old_file = cache_dir / old_row['pkl_file']
-            if old_file.exists():
-                old_file.unlink()
-        df = df[~((df['sofa_name'] == sofa_name) & (df['file_hash'] != file_hash))]
-        new_row = pd.DataFrame([{
-            'sofa_name': sofa_name, 'file_hash': file_hash,
-            'pkl_file': pkl_filename, 'timestamp': timestamp,
-        }])
-        df = pd.concat([df, new_row], ignore_index=True)
-        _save_index(cache_dir, df)
-    print(f"✓ Target cached: {pkl_path.name}")
+        return df, pkl_path, _read_pkl_versioned(pkl_path), True
+
+    timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+    pkl_filename = f"{Path(sofa_name).stem}_{file_hash[:8]}_{timestamp}.pkl"
+    # Invalidate stale entries for the same SOFA name with a different hash.
+    stale = df[(df['sofa_name'] == sofa_name) & (df['file_hash'] != file_hash)]
+    for _, old_row in stale.iterrows():
+        old_file = cache_dir / old_row['pkl_file']
+        if old_file.exists():
+            old_file.unlink()
+    df = df[~((df['sofa_name'] == sofa_name) & (df['file_hash'] != file_hash))]
+    new_row = pd.DataFrame([{
+        'sofa_name': sofa_name, 'file_hash': file_hash,
+        'pkl_file': pkl_filename, 'timestamp': timestamp,
+    }])
+    df = pd.concat([df, new_row], ignore_index=True)
+    _save_index(cache_dir, df)
+    return df, cache_dir / pkl_filename, {'format': _CACHE_FORMAT,
+                                          'targets': {}, 'templates': {}}, False
 
 
-def cache_save_template(cache_dir, sofa_file, interpolation, template):
-    """Add *template* to the HRTF pickle under the given interpolation key."""
-    cache_dir = Path(cache_dir)
-    df = _load_index(cache_dir)
-    file_hash = _compute_file_hash(sofa_file)
-    sofa_name = Path(sofa_file).name
-    row = _find_index_row(df, sofa_name, file_hash)
+def cache_save_target(cache_dir, sofa_file, feature_key, target):
+    """Save *target* under *feature_key*, creating the cache entry if needed."""
+    _, pkl_path, data, _ = _cache_entry(cache_dir, sofa_file)
+    data.setdefault('targets', {})[feature_key] = target
+    _write_pkl(pkl_path, data)
+    print(f"✓ Target '{feature_key}' cached: {pkl_path.name}")
 
-    if row is not None:
-        pkl_path = cache_dir / row['pkl_file']
-        try:
-            data = _read_pkl(pkl_path)
-        except Exception:
-            data = {'target': None, 'templates': {}}
-        data.setdefault('templates', {})[interpolation] = template
-        _write_pkl(pkl_path, data)
-    else:
-        cache_dir.mkdir(parents=True, exist_ok=True)
-        timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
-        pkl_filename = f"{Path(sofa_name).stem}_{file_hash[:8]}_{timestamp}.pkl"
-        pkl_path = cache_dir / pkl_filename
-        _write_pkl(pkl_path, {'target': None, 'templates': {interpolation: template}})
-        new_row = pd.DataFrame([{
-            'sofa_name': sofa_name, 'file_hash': file_hash,
-            'pkl_file': pkl_filename, 'timestamp': timestamp,
-        }])
-        df = pd.concat([df, new_row], ignore_index=True)
-        _save_index(cache_dir, df)
-    print(f"✓ Template '{interpolation}' cached: {pkl_path.name}")
+
+def cache_save_template(cache_dir, sofa_file, feature_key, interpolation, template):
+    """Add *template* to the HRTF pickle under the given feature and interpolation keys."""
+    _, pkl_path, data, _ = _cache_entry(cache_dir, sofa_file)
+    data.setdefault('templates', {}).setdefault(feature_key, {})[interpolation] = template
+    _write_pkl(pkl_path, data)
+    print(f"✓ Template '{feature_key}/{interpolation}' cached: {pkl_path.name}")
 
 
 # -----------------------------------
@@ -1097,12 +1116,12 @@ def print_memory_usage(label=""):
 
 
 def compute_features(hrir, coords, fs, spectral_range=[7e2, 18e3],
-                     halfwave_rectifier=True):
+                     halfwave_rectifier=True, reference='frontal'):
     r"""Compute ITD, ILD, and monaural spectral cues from binaural HRIRs.
 
     Implements the feature extraction of Eq. 1 of :footcite:t:`barumerli2023`:
 
-    1. Normalise HRIRs to the frontal direction.
+    1. Normalise the whole HRIR set by a single level reference (``reference``).
     2. Estimate ITD via :func:`itdestimator` and apply the signed-log
        perceptual warp :math:`\mathrm{sgn}(t)\,(\log(a + b\,|t|) - \log a)/b`
        with :math:`a = 32.5\,\mu\mathrm{s}` and :math:`b = 0.095`.
@@ -1133,6 +1152,33 @@ def compute_features(hrir, coords, fs, spectral_range=[7e2, 18e3],
         per-band mean: :math:`\sqrt{\mathrm{mean}(\max(x,0))}`.
         If ``False``, compute the full-wave RMS instead:
         :math:`\sqrt{\mathrm{mean}(x^2)}`.
+    reference : {'frontal', 'global', 'none'}, default='frontal'
+        Level reference :math:`k` by which the whole HRIR set is divided before
+        any cue is extracted.
+
+        - ``'frontal'`` — peak sample of the impulse response nearest to the
+          frontal direction (the historical behaviour, kept as the default).
+        - ``'global'`` — peak sample over the whole set, both ears and all
+          directions.
+        - ``'none'`` — no normalisation, :math:`k = 1`.
+
+        ITD and ILD are unaffected by this choice: ITD is a timing readout and
+        ILD is a level *ratio*, so :math:`k` cancels. It shifts
+        ``spectral_cues`` by a constant, identical for every direction and band.
+
+        The choice therefore only matters when target and template come from
+        **different** HRTF sets: their references :math:`k_A \neq k_B` then leave
+        a residual offset in every band that no later stage can tell apart from
+        a genuine spectral difference. ``'frontal'`` derives :math:`k` from a
+        single impulse response, whose peak is precisely what spectral smoothing
+        moves most; ``'global'`` references the whole set and so moves only when
+        the set's overall level moves, which is what makes cross-file comparison
+        valid.
+
+    Raises
+    ------
+    ValueError
+        If ``reference`` is not one of ``'frontal'``, ``'global'``, ``'none'``.
 
     Returns
     -------
@@ -1145,10 +1191,19 @@ def compute_features(hrir, coords, fs, spectral_range=[7e2, 18e3],
     freqs : :class:`numpy.ndarray`
         Filterbank centre frequencies in Hz, shape ``(n_freqs,)``.
     """
-    # normalize hrirs to frontal position
-    coords2find = pf.Coordinates.from_cartesian(1, 0, 0)
-    idx, _ = coords.find_nearest(coords2find)
-    hrirs_temp = hrir / np.max(np.abs(hrir[idx]))
+    # normalise the whole set by a single level reference k
+    if reference == 'frontal':
+        coords2find = pf.Coordinates.from_cartesian(1, 0, 0)
+        idx, _ = coords.find_nearest(coords2find)
+        k = np.max(np.abs(hrir[idx]))
+    elif reference == 'global':
+        k = np.max(np.abs(hrir))
+    elif reference == 'none':
+        k = 1.0
+    else:
+        raise ValueError(f"reference must be 'frontal', 'global' or 'none', "
+                         f"got {reference!r}")
+    hrirs_temp = hrir / k
 
     a = 32.5e-6
     b = 0.095

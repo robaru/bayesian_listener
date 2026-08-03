@@ -299,6 +299,7 @@ class BayesianListener:
         )
 
     def compute_target(self, convention='Barumerli2023', spectral_range=None,
+                       halfwave_rectifier=None, reference='frontal',
                        use_cache=True, force_recompute=False, cache_dir=None):
         """Extract auditory features from ``self.hrir`` and store them as :attr:`target`.
 
@@ -324,8 +325,21 @@ class BayesianListener:
         spectral_range : list of float or None, default=None
             ``[low_Hz, high_Hz]`` frequency limits of the gammatone filterbank
             used for the monaural cues.  ``None`` selects ``[700.0, 18000.0]``.
+        halfwave_rectifier : bool or None, default=None
+            Whether to half-wave rectify before the per-band mean.  ``None``
+            defers to the convention's own default
+            (``Barumerli2023.halfwave_rectifier`` is ``True``).
+        reference : {'frontal', 'global', 'none'}, default='frontal'
+            Level reference dividing the HRIR set before feature extraction; see
+            :func:`~bayesian_listener.utils.compute_features`.  It leaves ITD and
+            ILD untouched and shifts the monaural spectra by a constant, so it is
+            inert as long as target and template come from the same HRTF set.  It
+            matters only for cross-file comparison, where ``'global'`` is the
+            stable choice.
         use_cache : bool, default=True
-            Load from cache if available and save after computing.
+            Load from cache if available and save after computing.  The cache is
+            keyed by every argument above, so changing any of them yields a
+            separate entry rather than silently reusing another.
         force_recompute : bool, default=False
             If ``True``, ignore any cached target and recompute from scratch.
         cache_dir : str or :class:`pathlib.Path` or None, default=None
@@ -361,14 +375,22 @@ class BayesianListener:
         else:
             cache_dir = Path(cache_dir)
 
+        if halfwave_rectifier is None:
+            halfwave_rectifier = CONVENTIONS[convention].halfwave_rectifier
+
+        feature_key = utils.feature_cache_key(
+            convention, spectral_range, halfwave_rectifier, reference)
+
         if use_cache and not force_recompute:
-            target = utils.cache_load_target(cache_dir, self.sofa_file)
+            target = utils.cache_load_target(
+                cache_dir, self.sofa_file, feature_key)
             if target is not None:
                 self.target = target
                 return
 
         itd, ild, spectral_cues, freqs = utils.compute_features(
-            self.hrir, self.coords, self.fs, spectral_range)
+            self.hrir, self.coords, self.fs, spectral_range,
+            halfwave_rectifier=halfwave_rectifier, reference=reference)
         self.target = CONVENTIONS[convention](
             coords=self.coords,
             itd=itd,
@@ -376,9 +398,12 @@ class BayesianListener:
             spectral_cues=spectral_cues,
             freqs=freqs,
         )
+        # Carried so compute_template caches its template under the same key.
+        self.target.feature_key = feature_key
 
         if use_cache:
-            utils.cache_save_target(cache_dir, self.sofa_file, self.target)
+            utils.cache_save_target(
+                cache_dir, self.sofa_file, feature_key, self.target)
 
     def compute_template(self, interpolation='SHMAX', interpolation_grid=None,
                          use_cache=True, force_recompute=False, cache_dir=None):
@@ -411,6 +436,9 @@ class BayesianListener:
         use_cache : bool, default=True
             Load from cache if available and save after computing.  Requires a
             SOFA file path; raises :class:`ValueError` if ``sofa_file`` is ``None``.
+            The entry is keyed by ``interpolation`` *and* by the feature-extraction
+            parameters of :attr:`target`, so templates built from differently
+            extracted targets never collide.
         force_recompute : bool, default=False
             If ``True``, ignore any cached template and recompute from scratch.
         cache_dir : str or :class:`pathlib.Path` or None, default=None
@@ -454,20 +482,26 @@ class BayesianListener:
             self.template = self.target
             return
 
+        # The key describes how the target's features were extracted; a target
+        # set directly by the caller may not carry one, so fall back to its
+        # convention.
+        feature_key = getattr(self.target, 'feature_key', self.target.convention)
+
         # step 3: try cache, else interpolate and cache
         if use_cache and not force_recompute:
             template = utils.cache_load_template(
-                cache_dir, self.sofa_file, interpolation)
+                cache_dir, self.sofa_file, feature_key, interpolation)
             if template is not None:
                 self.template = template
                 return
 
         self.template = self._interpolate(
             self.target, interpolation, interpolation_grid)
+        self.template.feature_key = feature_key
 
         if use_cache:
             utils.cache_save_template(
-                cache_dir, self.sofa_file, interpolation, self.template)
+                cache_dir, self.sofa_file, feature_key, interpolation, self.template)
 
     def infer(self,
               repetitions=50,

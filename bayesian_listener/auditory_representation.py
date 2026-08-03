@@ -73,6 +73,10 @@ class Barumerli2023(_AuditoryRepresentation):
     ----------
     convention : str
         Fixed to ``'Barumerli2023'``.
+    halfwave_rectifier : bool
+        Class attribute (``True``): the rectification setting
+        :meth:`~bayesian_listener.BayesianListener.compute_target` uses for this
+        convention when its own ``halfwave_rectifier`` argument is ``None``.
     coords : :class:`pyfar.Coordinates`
         Source positions, one per row.
     itd : :class:`numpy.ndarray`
@@ -109,6 +113,10 @@ class Barumerli2023(_AuditoryRepresentation):
     ild: np.ndarray = None
     spectral_cues: np.ndarray = None
     freqs: np.ndarray = None
+
+    # Feature-extraction defaults for this convention. Deliberately unannotated:
+    # a plain class attribute, not a dataclass field.
+    halfwave_rectifier = True
 
     def __post_init__(self):
         """Concatenate ITD, ILD, and stacked spectral cues into :attr:`features`."""

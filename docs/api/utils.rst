@@ -35,6 +35,8 @@ Sampling
 Caching
 -------
 
+.. autofunction:: bayesian_listener.utils.feature_cache_key
+
 .. autofunction:: bayesian_listener.utils.cache_load_target
 
 .. autofunction:: bayesian_listener.utils.cache_load_template

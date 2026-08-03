@@ -195,8 +195,9 @@ def test_cache_roundtrip(tmp_path):
     am = BayesianListener(sofa_file)
     am.compute_template(cache_dir=str(cache_dir))
 
-    target = utils.cache_load_target(cache_dir, sofa_file)
-    template = utils.cache_load_template(cache_dir, sofa_file, 'SHMAX')
+    key = utils.feature_cache_key('Barumerli2023', [7e2, 18e3], True, 'frontal')
+    target = utils.cache_load_target(cache_dir, sofa_file, key)
+    template = utils.cache_load_template(cache_dir, sofa_file, key, 'SHMAX')
 
     assert target is not None
     assert template is not None

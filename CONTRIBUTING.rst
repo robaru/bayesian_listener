@@ -172,10 +172,13 @@ Branching
 * ``PATCH`` releases are prepared on a ``bugfix/<name>`` branch created from
   ``main``.
 
-In both cases the release branch is brought into ``main`` with a pull request
-that is merged with the *rebase* strategy, never with a merge commit. ``main``
-is never modified locally. It therefore always has a linear history and every
-commit on it has passed CI.
+``main`` is protected by a repository ruleset: it only accepts pull requests
+whose CI checks pass, requires a linear history, and cannot be pushed
+directly. The release branch is therefore rebased onto ``main`` once, the
+changelog and the version bump are committed on it, and a single pull request
+brings everything into ``main`` with the *rebase* merge strategy. The
+``vX.Y.Z`` tag is created on ``main`` after the merge, because the rebase
+merge gives the commits new hashes. Tags are not governed by the ruleset.
 
 Procedure
 ~~~~~~~~~
@@ -223,7 +226,18 @@ Procedure
     $ ruff check
     $ python -m sphinx -W --keep-going -b html docs docs/_build/html
 
-4. Push the release branch and open a pull request against ``main``. Because
+4. Bump the version on the release branch. The ``bump-my-version``
+   configuration in ``pyproject.toml`` updates the version in
+   ``pyproject.toml`` and ``bayesian_listener/__init__.py`` and creates a
+   commit. It does not create a tag (``tag = false``); the tag is added on
+   ``main`` in step 7. The working tree must be clean::
+
+    $ bump-my-version bump minor --verbose
+
+   Replace ``minor`` with ``patch`` or ``major`` as appropriate. Use
+   ``--dry-run`` first to preview the changes.
+
+5. Push the release branch and open a pull request against ``main``. Because
    the rebase rewrote history, ``develop`` needs a force push::
 
     $ git push --force-with-lease origin develop
@@ -234,9 +248,8 @@ Procedure
    documentation build and the deprecation-warning run on the pushed branch
    and reports the result on the pull request.
 
-5. Once CI is green and the pull request is approved, merge it with the
-   rebase strategy so ``main`` stays linear. Never merge into ``main``
-   locally::
+6. Once CI is green and the pull request is approved, merge it with the
+   rebase strategy so ``main`` stays linear::
 
     $ gh pr checks --watch
     $ gh pr merge --rebase
@@ -245,21 +258,12 @@ Procedure
    GitHub reports that the branch is not up to date, ``main`` moved in the
    meantime: go back to step 1.
 
-6. Check out the merged ``main`` and bump the version. The
-   ``bump-my-version`` configuration in ``pyproject.toml`` updates the
-   version in ``pyproject.toml`` and ``bayesian_listener/__init__.py``,
-   creates a commit and a ``vX.Y.Z`` tag. The working tree must be clean::
+7. Tag the merged bump commit on ``main`` and push the tag::
 
     $ git checkout main
     $ git pull origin main
-    $ bump-my-version bump minor --verbose
-
-   Replace ``minor`` with ``patch`` or ``major`` as appropriate. Use
-   ``--dry-run`` first to preview the changes.
-
-7. Push the commit and the tag::
-
-    $ git push --follow-tags
+    $ git tag -a v0.2.0 -m "Bump version: 0.1.1 → 0.2.0"
+    $ git push origin v0.2.0
 
    Pushing a ``vX.Y.Z`` tag triggers the ``test_and_publish`` workflow on
    CircleCI, which re-runs all checks on the tagged commit. If all jobs pass,
@@ -267,9 +271,9 @@ Procedure
    workflow on CircleCI and the new version on
    https://pypi.org/project/bayesian_listener/.
 
-8. Bring ``develop`` level with ``main`` so the version bump is carried
-   over. The rebase merge on GitHub rewrote the commit hashes, so rebase
-   ``develop`` onto ``main``; git drops the commits that are already there::
+8. Bring ``develop`` level with ``main``. The rebase merge on GitHub
+   rewrote the commit hashes, so rebase ``develop`` onto ``main``; git drops
+   the commits that are already there::
 
     $ git checkout develop
     $ git rebase main
@@ -281,6 +285,6 @@ Procedure
 .. note::
     If the ``test_and_publish`` workflow fails after the tag was pushed, fix
     the problem through a new pull request, delete the tag locally and
-    remotely (``git tag -d vX.Y.Z`` and ``git push origin :refs/tags/vX.Y.Z``),
-    revert the bump commit and repeat from step 6. A version that was already
+    remotely (``git tag -d vX.Y.Z`` and ``git push origin :refs/tags/vX.Y.Z``)
+    and repeat from step 7 on the fixed ``main``. A version that was already
     uploaded to PyPI cannot be replaced; release a new patch version instead.

@@ -4,7 +4,7 @@
 
 __author__ = """Roberto Barumerli, Fabian Brinkmann, Emanuele Zanoni, Anton Hoyer"""
 __email__ = 'r.barumerli@imperial.ac.uk'
-__version__ = '0.1.1'
+__version__ = '0.2.0'
 __all__ = [
     'BayesianListener',
     'Barumerli2023',

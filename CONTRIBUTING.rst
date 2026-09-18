@@ -93,18 +93,18 @@ Ready to contribute? Here's how to set up `bayesian_listener_package` for local 
 
    Then open ``docs/_build/html/index.html`` in a browser.
 
-8. Commit your changes and push your branch to GitHub::
+7. Commit your changes and push your branch to GitHub::
 
     $ git add .
     $ git commit -m "Your detailed description of your changes."
     $ git push origin name-of-your-bugfix-or-feature
 
-9. Submit a pull request on the develop branch through the GitHub website.
+8. Submit a pull request on the develop branch through the GitHub website.
 
 
 
 Keep your branch up to date with rebase
-------------
+---------------------------------------
 Before submitting your pull request, make sure your branch is up to date with
 the latest ``develop`` branch using rebase rather than merge. This keeps the
 commit history clean and linear::
@@ -139,3 +139,148 @@ commit history, a force push is required::
     that prevents overwriting changes if someone else has pushed to the same
     branch in the meantime.
 
+Releasing a new version
+-----------------------
+
+The release procedure follows the
+`pyfar release guidelines <https://pyfar-gallery.readthedocs.io/en/latest/contribute/packages/releasing.html>`_,
+with two differences: branches are rebased rather than merged, and every
+release goes through a pull request into ``main`` so that CI tests the exact
+code that will be published. Only maintainers with push access to ``main``
+and ``develop`` can release.
+
+Versioning
+~~~~~~~~~~
+
+bayesian_listener uses `Semantic Versioning <https://semver.org/>`_,
+``MAJOR.MINOR.PATCH``:
+
+* ``MAJOR`` – incompatible API changes,
+* ``MINOR`` – backwards-compatible new functionality,
+* ``PATCH`` – backwards-compatible bug fixes. Documentation-only changes are
+  also released as a patch.
+
+Because the model output is used in publications, treat any change that alters
+simulated responses, fitted parameters, or metric values for the same input as
+a ``MINOR`` change at least, and document it in ``HISTORY.rst``.
+
+Branching
+~~~~~~~~~
+
+* ``MINOR`` and ``MAJOR`` releases collect the commits on ``develop``. The
+  release branch is ``develop`` itself, rebased onto ``main``.
+* ``PATCH`` releases are prepared on a ``bugfix/<name>`` branch created from
+  ``main``.
+
+In both cases the release branch is brought into ``main`` with a pull request
+that is merged with the *rebase* strategy, never with a merge commit. ``main``
+is never modified locally. It therefore always has a linear history and every
+commit on it has passed CI.
+
+Procedure
+~~~~~~~~~
+
+1. Bring the release branch up to date with ``main`` by rebasing. For a
+   minor or major release::
+
+    $ git fetch origin
+    $ git checkout develop
+    $ git rebase origin/main
+
+   For a patch release::
+
+    $ git fetch origin
+    $ git checkout -b bugfix/<name> origin/main
+
+   Resolve conflicts as described in `Keep your branch up to date with
+   rebase`_.
+
+2. Update ``HISTORY.rst`` on the release branch. Add a new section at the
+   top with the version number and release date, grouped into ``Added``,
+   ``Changed``, ``Fixed`` and ``Removed`` sub-sections as applicable::
+
+    0.2.0 (2026-09-18)
+    ------------------
+
+    Added
+    ^^^^^
+    * New feature ...
+
+    Fixed
+    ^^^^^
+    * Bug fix ...
+
+   Commit the changelog::
+
+    $ git add HISTORY.rst
+    $ git commit -m "docs: update HISTORY.rst for 0.2.0"
+
+3. Run the full test suite, the linter and the strict documentation build
+   locally, mirroring CI. All must pass without warnings::
+
+    $ pytest
+    $ pytest tests -W error::DeprecationWarning
+    $ ruff check
+    $ python -m sphinx -W --keep-going -b html docs docs/_build/html
+
+4. Push the release branch and open a pull request against ``main``. Because
+   the rebase rewrote history, ``develop`` needs a force push::
+
+    $ git push --force-with-lease origin develop
+    $ gh pr create --base main --head develop --title "Release 0.2.0"
+
+   For a patch release push ``bugfix/<name>`` normally. The pull request can
+   also be opened on the GitHub website. CircleCI runs the tests, ruff, the
+   documentation build and the deprecation-warning run on the pushed branch
+   and reports the result on the pull request.
+
+5. Once CI is green and the pull request is approved, merge it with the
+   rebase strategy so ``main`` stays linear. Never merge into ``main``
+   locally::
+
+    $ gh pr checks --watch
+    $ gh pr merge --rebase
+
+   The same can be done on the GitHub website with *Rebase and merge*. If
+   GitHub reports that the branch is not up to date, ``main`` moved in the
+   meantime: go back to step 1.
+
+6. Check out the merged ``main`` and bump the version. The
+   ``bump-my-version`` configuration in ``pyproject.toml`` updates the
+   version in ``pyproject.toml`` and ``bayesian_listener/__init__.py``,
+   creates a commit and a ``vX.Y.Z`` tag. The working tree must be clean::
+
+    $ git checkout main
+    $ git pull origin main
+    $ bump-my-version bump minor --verbose
+
+   Replace ``minor`` with ``patch`` or ``major`` as appropriate. Use
+   ``--dry-run`` first to preview the changes.
+
+7. Push the commit and the tag::
+
+    $ git push --follow-tags
+
+   Pushing a ``vX.Y.Z`` tag triggers the ``test_and_publish`` workflow on
+   CircleCI, which re-runs all checks on the tagged commit. If all jobs pass,
+   the package is built and uploaded to PyPI automatically. Check the
+   workflow on CircleCI and the new version on
+   https://pypi.org/project/bayesian_listener/.
+
+8. Bring ``develop`` level with ``main`` so the version bump is carried
+   over. The rebase merge on GitHub rewrote the commit hashes, so rebase
+   ``develop`` onto ``main``; git drops the commits that are already there::
+
+    $ git checkout develop
+    $ git rebase main
+    $ git push --force-with-lease origin develop
+
+9. Create a GitHub release from the tag and copy the ``HISTORY.rst`` entry
+   into its description. Acknowledge contributors where appropriate.
+
+.. note::
+    If the ``test_and_publish`` workflow fails after the tag was pushed, fix
+    the problem through a new pull request, delete the tag locally and
+    remotely (``git tag -d vX.Y.Z`` and ``git push origin :refs/tags/vX.Y.Z``),
+    revert the bump commit and repeat from step 6. A version that was already
+    uploaded to PyPI cannot be replaced; release a new patch version instead.

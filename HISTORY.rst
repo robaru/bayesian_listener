@@ -43,6 +43,8 @@ Fixed
   requested; it previously always returned radians in that case.
 * Degenerate rotation axis at the south pole in the von Mises-Fisher sampler
   no longer produces NaN.
+* The guide tests that need ``data/responses_P0001.csv`` lost their ``guide``
+  mark and ran in the default test suite.
 
 0.1.1 (2026-06-25)
 ------------------

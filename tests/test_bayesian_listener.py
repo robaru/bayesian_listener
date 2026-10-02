@@ -76,7 +76,7 @@ def test_model_multiple():
     }
 
     target_indices = [100, 260]
-    true_cart = am.coords.cartesian[target_indices, :]
+    true_cart = am.target.coords.cartesian[target_indices, :]
 
     am.target = am.target[target_indices]
 
@@ -158,7 +158,7 @@ def test_sofa_object_input():
     am = BayesianListener(sofa_data)
 
     assert am.sofa_file is None
-    assert isinstance(am.coords, pf.Coordinates)
+    assert am._source_coords.csize == am.hrir.shape[0]
     assert am.hrir is not None
     assert am.fs > 0
 

@@ -83,8 +83,6 @@ class BayesianListener:
             Head-related impulse responses, shape ``(n_directions, 2, n_samples)``.
         fs : int
             Sampling rate in Hz.
-        coords : :class:`pyfar.Coordinates`
-            Source positions, one per HRIR row.
         parameters : dict
             Mapping with keys ``sigma_itd``, ``sigma_ild``, ``sigma_spectral``,
             ``sigma_prior``, ``kappa_motor``.
@@ -117,7 +115,9 @@ class BayesianListener:
         self.hrir = sofa_data.Data_IR
         self.fs = int(sofa_data.Data_SamplingRate)
         sp = sofa_data.SourcePosition
-        self.coords = pf.Coordinates.from_spherical_elevation(
+        # Measured source positions, one per HRIR row; exposed publicly as
+        # ``target.coords`` once compute_target() has run.
+        self._source_coords = pf.Coordinates.from_spherical_elevation(
             np.deg2rad(sp[:, 0]), np.deg2rad(sp[:, 1]), sp[:, 2])
 
         # noise and prior parameters (group average, Barumerli et al. 2025)
@@ -389,10 +389,10 @@ class BayesianListener:
                 return
 
         itd, ild, spectral_cues, freqs = utils.compute_features(
-            self.hrir, self.coords, self.fs, spectral_range,
+            self.hrir, self._source_coords, self.fs, spectral_range,
             halfwave_rectifier=halfwave_rectifier, reference=reference)
         self.target = CONVENTIONS[convention](
-            coords=self.coords,
+            coords=self._source_coords,
             itd=itd,
             ild=ild,
             spectral_cues=spectral_cues,

@@ -83,7 +83,7 @@ def model_and_arrays(fitting_data):
     model = BayesianListener(sofa_path)
     model.compute_template(interpolation='SH')
 
-    target_indices = model.coords.find_nearest(targets_coords)[0][0]
+    target_indices = model.target.coords.find_nearest(targets_coords)[0][0]
     targets = model.target[target_indices]
 
     subj_data = obs_tbl[obs_tbl['participant'] == 'test_subj']

@@ -37,7 +37,7 @@ def plot_cues(bl: BayesianListener, title='', fig=None, ax=None, clim=None, elev
         raise ValueError(
             'Target not set. Call compute_target() before plot_cues().')
     side = 0 # left/right channel
-    dirs = bl.coords.spherical_elevation
+    dirs = bl.target.coords.spherical_elevation
     dirs[:, 0:2] = np.rad2deg(dirs[:, 0:2])
     # select directions with azimuth almost zero (median frontal plane)
     median_idx = np.abs(dirs[:, 0] - 0) < 2

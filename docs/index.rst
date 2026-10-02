@@ -27,6 +27,10 @@ An auditory model for simulating human sound localisation
    :target: https://pypi.org/project/bayesian_listener/
    :alt: Python versions
 
+.. image:: https://img.shields.io/badge/GitHub-robaru%2Fbayesian__listener-blue?logo=github
+   :target: https://github.com/robaru/bayesian_listener
+   :alt: GitHub repository
+
 .. image:: https://img.shields.io/badge/license-EUPL%201.2-blue
    :target: https://joinup.ec.europa.eu/collection/eupl/eupl-text-eupl-12
    :alt: EUPL 1.2 license
@@ -96,9 +100,11 @@ original model paper and its statistical validation:
                   and L. Picinali and M. Geronazzo},
       title   = {Statistical validation and full-sphere extension of a {Bayesian}
                   model for human static sound localisation},
-      journal = {Submitted to Acta Acustica},
+      journal = {Acta Acustica},
+      volume  = {10},
+      pages   = {89},
       year    = {2026},
-      url = {https://arxiv.org/abs/2606.24367}
+      doi     = {10.1051/aacus/2026084},
    }
 
    @article{barumerli2023,

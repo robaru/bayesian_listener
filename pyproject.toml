@@ -72,12 +72,12 @@ docs = [
 dev = ["bayesian_listener[deploy,tests,docs]"]
 
 [project.urls]
-Tracker = "https://github.com/robaru/bayesian_listener_package/issues"
-Documentation = "https://bayesian_listener.readthedocs.io/"
+Tracker = "https://github.com/robaru/bayesian_listener/issues"
+Documentation = "https://bayesian-listener.readthedocs.io/"
 Download = "https://pypi.org/project/bayesian_listener/"
-Homepage = "https://bayesian_listener.readthedocs.io/"
-Source = "https://github.com/robaru/bayesian_listener_package"
-Changelog = "https://github.com/robaru/bayesian_listener_package/blob/main/HISTORY.rst"
+Homepage = "https://bayesian-listener.readthedocs.io/"
+Source = "https://github.com/robaru/bayesian_listener"
+Changelog = "https://github.com/robaru/bayesian_listener/blob/main/HISTORY.rst"
 
 [build-system]
 requires = ["setuptools>=61.0", "wheel"]

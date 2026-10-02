@@ -277,7 +277,7 @@ def estimate_motor_noise(model, obs_tbl, targets_coords, subject_id=None,
     template_lat = model.template.coords.lateral
 
     # Target ITD+ILD features
-    target_indices = model.coords.find_nearest(targets_coords)[0][0]
+    target_indices = model.target.coords.find_nearest(targets_coords)[0][0]
     target_itd = model.target.itd[target_indices].flatten()
     target_ild = model.target.ild[target_indices].flatten()
 
@@ -733,7 +733,7 @@ def fit_listener_partial(sofa_path, obs_tbl, targets_coords,
         model.compute_template(interpolation=interpolation_method)
 
         # Extract features as AuditoryRepresentation subset
-        target_indices = model.coords.find_nearest(targets_coords)[0][0]
+        target_indices = model.target.coords.find_nearest(targets_coords)[0][0]
         targets = model.target[target_indices]
 
         # Build response coordinates

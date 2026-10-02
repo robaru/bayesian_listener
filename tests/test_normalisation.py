@@ -172,15 +172,15 @@ def test_reference_offset_matches_rectifier_exponent(sofa_path):
     ``notes/NORMALISATION_BRIEF.md``.
     """
     listener = _listener(sofa_path)
-    idx, _ = listener.coords.find_nearest(pf.Coordinates.from_cartesian(1, 0, 0))
+    idx, _ = listener._source_coords.find_nearest(pf.Coordinates.from_cartesian(1, 0, 0))
     k = np.max(np.abs(listener.hrir[idx]))
 
     for halfwave_rectifier, factor in ((True, 10.0), (False, 20.0)):
         _, _, cues_frontal, _ = utils.compute_features(
-            listener.hrir, listener.coords, listener.fs,
+            listener.hrir, listener._source_coords, listener.fs,
             halfwave_rectifier=halfwave_rectifier, reference='frontal')
         _, _, cues_none, _ = utils.compute_features(
-            listener.hrir, listener.coords, listener.fs,
+            listener.hrir, listener._source_coords, listener.fs,
             halfwave_rectifier=halfwave_rectifier, reference='none')
 
         offset = np.mean(cues_none - cues_frontal)

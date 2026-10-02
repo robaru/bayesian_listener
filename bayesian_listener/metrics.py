@@ -5,8 +5,9 @@ of standard metrics in the interaural-polar coordinate system following
 :footcite:t:`middlebrooks1999`: lateral RMS error (``sdL``, ``rmsL``), local polar RMS
 error (``rmsPmedianlocal``), quadrant-error rate (``querrMiddlebrooks``),
 lateral and polar bias (``accL_cutoff``, ``accP_cutoff``), and a great-circle
-angular error (``angular_error``).  New metrics can be added with the
-:func:`register_metric` decorator.
+angular error (``angular_error``).  The polar gain (``gainP``) follows the
+selective iterative regression procedure described by :footcite:t:`macpherson2003`.
+New metrics can be added with the :func:`register_metric` decorator.
 """
 import numpy as np
 import pyfar as pf
@@ -678,6 +679,240 @@ def querrMiddlebrooks(true, est):
 
     qerr = 100 * n_confusions / n_total
     return qerr, {'confusion_count': n_confusions, 'response_count': n_total}
+
+
+def _sirp(x, y, init, delta, n_min, maxiter):
+    r"""Selective iterative regression procedure (SIRP) for one hemifield.
+
+    Implements the procedure as described by :footcite:t:`macpherson2003`.
+    A line is fitted to the initial inliers
+    (the responses in the correct hemifield); every point of the pool lying
+    closer to that line than ``delta`` becomes the next inlier set, and the
+    line is refitted.  Points dropped in one iteration can be reselected in a
+    later one.  The procedure stops when the inlier set no longer changes,
+    and the result is the fit on that converged set.
+
+    Parameters
+    ----------
+    x : :class:`numpy.ndarray`
+        Target polar angles of the hemifield pool in radians, shape ``(n,)``.
+    y : :class:`numpy.ndarray`
+        Response polar angles in radians, same shape as ``x``.
+    init : :class:`numpy.ndarray`
+        Boolean mask of the initial inliers, same shape as ``x``.
+    delta : float
+        Criterion distance in radians; a point is an inlier when its
+        residual, wrapped to :math:`[-\pi, \pi)`, satisfies
+        :math:`|y - \hat{y}| <` ``delta``.
+    n_min : int
+        Minimum number of inliers required at every iteration.
+    maxiter : int
+        Maximum number of regressions before the procedure is declared
+        non-convergent.
+
+    Returns
+    -------
+    dict
+        Mapping with keys:
+
+        - ``'gain'`` (float) — slope of the regression on the converged
+          inlier set, ``np.nan`` if the procedure failed.
+        - ``'bias'`` (float) — intercept in radians, ``np.nan`` on failure.
+        - ``'n'`` (int) — size of the converged inlier set, or of the last
+          set considered when the procedure stopped early.
+        - ``'converged'`` (bool) — whether the inlier set converged.
+
+        The procedure fails when an inlier set has fewer than ``n_min``
+        points or no spread in target polar angle, when the inlier sets
+        cycle, or when ``maxiter`` is reached; the latter two emit a
+        :class:`UserWarning`.
+    """
+    def result(inliers, coef=(np.nan, np.nan), converged=False):
+        return {'gain': coef[0], 'bias': coef[1],
+                'n': int(np.sum(inliers)), 'converged': converged}
+
+    def degenerate(inliers):
+        # A line needs at least two distinct target angles
+        return np.sum(inliers) < max(n_min, 2) or np.ptp(x[inliers]) == 0
+
+    inliers = np.asarray(init, dtype=bool)
+    if degenerate(inliers):
+        return result(inliers)
+
+    seen = {inliers.tobytes()}
+    for _ in range(maxiter):
+        coef = np.polyfit(x[inliers], y[inliers], 1)
+        residual = wrap_to_pi(y - np.polyval(coef, x))
+        new_inliers = np.abs(residual) < delta
+        if np.array_equal(new_inliers, inliers):
+            return result(inliers, coef, converged=True)
+        if degenerate(new_inliers):
+            return result(new_inliers)
+        if new_inliers.tobytes() in seen:
+            warnings.warn(
+                "gainP: the selective iterative regression entered a cycle "
+                "of inlier sets and did not converge; returning NaN for this "
+                "hemifield.", UserWarning, stacklevel=5)
+            return result(new_inliers)
+        seen.add(new_inliers.tobytes())
+        inliers = new_inliers
+
+    warnings.warn(
+        f"gainP: the selective iterative regression did not converge within "
+        f"maxiter={maxiter} iterations; returning NaN for this hemifield.",
+        UserWarning, stacklevel=5)
+    return result(inliers)
+
+
+@register_metric(
+    name="gainP",
+    coord_convention="horizontal-polar",
+    input_unit="radians",
+    output_unit="unitless",
+    description=(
+        "Polar gain (unitless), Macpherson and Middlebrooks (2003).\n\t"
+        "Mean of the front- and rear-hemifield slopes of response vs.\n\t"
+        "target polar angle, fitted with the selective iterative\n\t"
+        "regression procedure (SIRP) to targets within ±cutoff lateral\n\t"
+        "(default 30°).  NaN if either hemifield fails."
+    ),
+    kwargs_description={
+        'cutoff': (
+            "Lateral angle threshold in radians (default: π/6 = 30°).\n\t\t"
+            "Only targets with |lateral| ≤ cutoff are included."
+        ),
+        'delta': (
+            "SIRP criterion distance in radians (default: 2π/9 = 40°).\n\t\t"
+            "Points closer than delta to the regression line are inliers."
+        ),
+        'n_min': (
+            "Minimum number of inliers per hemifield (default: 5).\n\t\t"
+            "Fewer inliers yield NaN for that hemifield."
+        ),
+        'maxiter': (
+            "Maximum number of SIRP iterations per hemifield (default: 100).\n\t\t"
+            "Non-convergence yields NaN and a UserWarning."
+        ),
+    },
+    ylabel="Polar gain",
+    auxiliary_output={
+        'gain_front': 'Front-hemifield polar gain (slope)',
+        'gain_rear': 'Rear-hemifield polar gain (slope)',
+        'bias_front': 'Front-hemifield intercept (rad)',
+        'bias_rear': 'Rear-hemifield intercept (rad)',
+        'n_front': 'Number of front-hemifield inliers',
+        'n_rear': 'Number of rear-hemifield inliers',
+        'converged_front': 'Whether the front-hemifield SIRP converged',
+        'converged_rear': 'Whether the rear-hemifield SIRP converged',
+    },
+)
+def gainP(true, est, cutoff=np.deg2rad(30), delta=np.deg2rad(40), n_min=5,
+          maxiter=100):
+    r"""Polar gain from the selective iterative regression procedure.
+
+    The polar gain is the slope of the linear regression of response on
+    target polar angle, computed separately for the front
+    (:math:`-90^\circ` to :math:`+90^\circ`) and rear (:math:`+90^\circ` to
+    :math:`+270^\circ`) hemifields with the selective iterative regression
+    procedure (SIRP) described by :footcite:t:`macpherson2003`, and averaged
+    across the two hemifields.
+    A gain of 1 indicates veridical polar localisation, 0 indicates
+    responses unrelated to the target polar angle.
+
+    For each hemifield:
+
+    1. The pool contains all responses to the targets in that hemifield
+       (target polar angle :math:`\le 90^\circ` for front,
+       :math:`\ge 90^\circ` for rear), polar angles wrapped to
+       :math:`[-90^\circ, 270^\circ)`.
+    2. The inliers are initialised with the responses in the correct
+       hemifield.
+    3. A line is fitted by least squares to the inliers, and the new inliers
+       are all pool points whose residual, wrapped to
+       :math:`[-180^\circ, 180^\circ)`, is smaller than ``delta``.
+    4. Step 3 is repeated until the inlier set no longer changes; the gain
+       is the slope of the fit on that converged set.
+
+    Only targets with :math:`|\alpha| \le` ``cutoff`` enter the analysis.
+    Unlike :func:`querrMiddlebrooks` and :func:`rmsPmedianlocal`, which select
+    on the *response* lateral angle, this selection is on the *target*
+    lateral angle.  It reflects the stimulus design of
+    :footcite:t:`macpherson2003` (targets within :math:`30^\circ` of the
+    median plane) rather than the regression procedure itself.
+
+    Parameters
+    ----------
+    true : :class:`numpy.ndarray`
+        Target directions, horizontal-polar with angles in radians.
+    est : :class:`numpy.ndarray`
+        Estimated directions, same convention as ``true``.
+    cutoff : float, default=π/6
+        Lateral-angle threshold in radians; only targets with
+        :math:`|\alpha| \le` ``cutoff`` are included.
+    delta : float, default=2π/9
+        Criterion distance :math:`\Delta` in radians (:math:`40^\circ`).
+    n_min : int, default=5
+        Minimum number of inliers per hemifield, checked at initialisation
+        and at every iteration.  Fewer inliers yield ``np.nan`` for that
+        hemifield.
+    maxiter : int, default=100
+        Maximum number of regressions per hemifield.
+
+    Returns
+    -------
+    gain : float
+        Mean of the front and rear polar gains (unitless), or ``np.nan`` if
+        either hemifield fails: fewer than ``n_min`` inliers, inliers that
+        all share one target polar angle (slope undefined), or no
+        convergence.  Unaffected by ``degrees=True`` in
+        :func:`localization_error`.
+    aux : dict
+        Mapping with keys:
+
+        - ``'gain_front'``, ``'gain_rear'`` (float) — per-hemifield gains.
+        - ``'bias_front'``, ``'bias_rear'`` (float) — per-hemifield
+          intercepts in radians (not converted by ``degrees=True``).
+        - ``'n_front'``, ``'n_rear'`` (int) — size of the converged inlier
+          set, or of the last set considered when the procedure stopped
+          early.
+        - ``'converged_front'``, ``'converged_rear'`` (bool) — whether the
+          inlier set converged.
+
+    Warns
+    -----
+    UserWarning
+        If the inlier sets of a hemifield cycle or ``maxiter`` is reached;
+        that hemifield is then ``np.nan``.
+
+    Notes
+    -----
+    Results can differ from AMT's ``localizationerror(m, 'gainP')`` in a
+    minority of cases: AMT fits the final line to the iteration with the
+    most inliers, whereas this implementation, following
+    :footcite:t:`macpherson2003`, uses the converged inlier set.
+    """
+    lat_true = wrap_to_pi(true[..., 0])
+    central = np.abs(lat_true) <= cutoff
+    pol_true = wrap_polar_angle(true[..., 1])[central]
+    pol_est = wrap_polar_angle(est[..., 1])[central]
+
+    aux = {}
+    for side in ('front', 'rear'):
+        if side == 'front':
+            pool = pol_true <= np.pi / 2
+            correct = pol_est[pool] <= np.pi / 2
+        else:
+            pool = pol_true >= np.pi / 2
+            correct = pol_est[pool] >= np.pi / 2
+        res = _sirp(pol_true[pool], pol_est[pool], correct,
+                    delta=delta, n_min=n_min, maxiter=maxiter)
+        aux[f'gain_{side}'] = res['gain']
+        aux[f'bias_{side}'] = res['bias']
+        aux[f'n_{side}'] = res['n']
+        aux[f'converged_{side}'] = res['converged']
+
+    gain = np.mean([aux['gain_front'], aux['gain_rear']])
+    return gain, aux
 
 
 @register_metric(

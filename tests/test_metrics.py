@@ -117,6 +117,7 @@ def test_all_metrics_registered():
         'rmsPmedianlocal',
         'querrMiddlebrooks',
         'angular_error',
+        'gainP',
     ]
     for metric_name in expected_metrics:
         assert metric_name in METRIC_FUNCTIONS, \
@@ -1057,6 +1058,220 @@ def test_accP_cutoff_custom_cutoff():
         cutoff=np.deg2rad(20),
     )
     assert np.isclose(result, polar_bias, rtol=1e-3)
+
+
+# =============================================================================
+# gainP (selective iterative regression procedure)
+# =============================================================================
+
+# Rear-hemifield targets with veridical responses, used to complete the
+# synthetic front-hemifield cases below.
+_REAR_POLAR_DEG = np.arange(100, 261, 20, dtype=float)
+
+
+def _median_plane(target_polar_deg, response_polar_deg,
+                  target_lateral_deg=None, response_lateral_deg=None):
+    """Build target and response coordinates from polar angles in degrees."""
+    target_polar_deg = np.asarray(target_polar_deg, dtype=float)
+    response_polar_deg = np.asarray(response_polar_deg, dtype=float)
+    if target_lateral_deg is None:
+        target_lateral_deg = np.zeros_like(target_polar_deg)
+    if response_lateral_deg is None:
+        response_lateral_deg = target_lateral_deg
+    targets = pf.Coordinates.from_spherical_side(
+        np.deg2rad(target_lateral_deg), np.deg2rad(target_polar_deg), 1)
+    estimations = pf.Coordinates.from_spherical_side(
+        np.deg2rad(response_lateral_deg), np.deg2rad(response_polar_deg), 1)
+    return targets, estimations
+
+
+def _with_veridical_rear(front_target_deg, front_response_deg):
+    """Append veridical rear-hemifield trials to front-hemifield data."""
+    return _median_plane(
+        np.concatenate([front_target_deg, _REAR_POLAR_DEG]),
+        np.concatenate([front_response_deg, _REAR_POLAR_DEG]),
+    )
+
+
+def test_gainP_perfect_listener():
+    """Test gainP is 1 for veridical responses in both hemifields."""
+    polar = np.arange(-60, 241, 15, dtype=float)
+    lateral = np.resize([0.0, 20.0, -20.0], polar.shape)
+    targets, estimations = _median_plane(polar, polar, lateral)
+
+    gain, aux = localization_error(targets, estimations, 'gainP',
+                                   auxiliary_output=True)
+    assert np.isclose(gain, 1.0)
+    assert np.isclose(aux['gain_front'], 1.0)
+    assert np.isclose(aux['gain_rear'], 1.0)
+    assert aux['converged_front'] and aux['converged_rear']
+
+
+def test_gainP_known_slope_and_bias():
+    """Test gainP recovers slope 0.5 and intercept 10° of a compressed listener.
+
+    In the rear hemifield, the responses to targets between 90° and 150° fall
+    in the front hemifield, so they are excluded at initialisation and
+    reselected once the first line has been fitted.
+    """
+    polar = np.arange(-60, 261, 10, dtype=float)
+    targets, estimations = _median_plane(polar, 0.5 * polar + 10)
+
+    gain, aux = localization_error(targets, estimations, 'gainP',
+                                   auxiliary_output=True)
+    assert np.isclose(gain, 0.5)
+    assert np.isclose(aux['bias_front'], np.deg2rad(10))
+    assert np.isclose(aux['bias_rear'], np.deg2rad(10))
+    assert aux['n_front'] == np.sum(polar <= 90)
+    assert aux['n_rear'] == np.sum(polar >= 90)
+
+
+def test_gainP_too_few_central_targets():
+    """Test gainP is NaN when fewer than n_min central targets remain."""
+    polar = np.arange(-60, 241, 15, dtype=float)
+    lateral = np.full(polar.shape, 45.0)
+    lateral[:3] = 0.0  # only three central targets
+    targets, estimations = _median_plane(polar, polar, lateral)
+
+    gain, aux = localization_error(targets, estimations, 'gainP',
+                                   auxiliary_output=True)
+    assert np.isnan(gain)
+    assert np.isnan(aux['gain_front']) and np.isnan(aux['gain_rear'])
+    assert not aux['converged_front'] and not aux['converged_rear']
+
+
+def test_gainP_selects_on_target_lateral():
+    """Test gainP selects central trials by target, not response, lateral."""
+    polar = np.arange(-60, 241, 15, dtype=float)
+    targets, estimations = _median_plane(
+        polar, polar,
+        target_lateral_deg=np.zeros(polar.shape),
+        response_lateral_deg=np.full(polar.shape, 50.0),
+    )
+    assert np.isclose(localization_error(targets, estimations, 'gainP'), 1.0)
+
+
+def test_gainP_reselects_response_past_hemifield_border():
+    """Test a response just past 90° is reselected after initialisation.
+
+    The response at 100° to the front target at 80° lies in the wrong
+    hemifield, so it is not part of the initial inliers.  Its distance to the
+    initial line (20°) is below ``delta``, so it must be reselected; a
+    procedure restricted to correct-hemifield responses would return a
+    front gain of exactly 1.
+    """
+    front_target = np.array([-60, -40, -20, 0, 20, 40, 60, 80], dtype=float)
+    front_response = front_target.copy()
+    front_response[-1] = 100.0
+    targets, estimations = _with_veridical_rear(front_target, front_response)
+
+    _, aux = localization_error(targets, estimations, 'gainP',
+                                auxiliary_output=True)
+    expected = np.polyfit(front_target, front_response, 1)[0]
+    assert aux['n_front'] == front_target.size
+    assert np.isclose(aux['gain_front'], expected)
+    assert not np.isclose(aux['gain_front'], 1.0)
+
+
+def test_gainP_returns_converged_set_not_largest():
+    """Test gainP fits the converged inlier set, not the largest one.
+
+    The front-hemifield inlier counts go 5 (initial) -> 6 -> 5 -> 5
+    (converged).  AMT's ``localizationerror(m, 'gainP')`` keeps the
+    iteration with the most points (all six trials); the procedure as
+    described by Macpherson & Middlebrooks (2003) returns the fit on the
+    converged five-point set, which drops the trial at polar 0° / 12°.
+    """
+    front_target = np.array([0, 20, -50, -30, 0, -10], dtype=float)
+    front_response = np.array([66, 103, -68, -11, 12, 50], dtype=float)
+    targets, estimations = _with_veridical_rear(front_target, front_response)
+
+    _, aux = localization_error(targets, estimations, 'gainP',
+                                auxiliary_output=True)
+    converged = np.array([True, True, True, True, False, True])
+    expected = np.polyfit(front_target[converged],
+                          front_response[converged], 1)[0]
+    largest = np.polyfit(front_target, front_response, 1)[0]
+    assert aux['converged_front']
+    assert aux['n_front'] == 5
+    assert np.isclose(aux['gain_front'], expected)
+    assert not np.isclose(aux['gain_front'], largest)
+
+
+def test_gainP_cycle_returns_nan_with_warning():
+    """Test gainP returns NaN and warns when the inlier sets cycle.
+
+    The front-hemifield inlier sets alternate between all seven trials and a
+    five-trial subset, so the procedure never converges.
+    """
+    front_target = np.array([70, 0, 80, 50, 70, -60, 50], dtype=float)
+    front_response = np.array([61, -35, 49, 16, 63, 227, 14], dtype=float)
+    targets, estimations = _with_veridical_rear(front_target, front_response)
+
+    with pytest.warns(UserWarning, match="cycle"):
+        gain, aux = localization_error(targets, estimations, 'gainP',
+                                       auxiliary_output=True)
+    assert np.isnan(gain)
+    assert np.isnan(aux['gain_front'])
+    assert not aux['converged_front']
+    assert aux['converged_rear']
+    assert np.isclose(aux['gain_rear'], 1.0)
+
+
+def test_gainP_maxiter_returns_nan_with_warning():
+    """Test gainP returns NaN and warns when maxiter is reached."""
+    polar = np.arange(-60, 261, 10, dtype=float)
+    targets, estimations = _median_plane(polar, 0.5 * polar + 10)
+
+    # The rear hemifield needs two regressions to converge
+    with pytest.warns(UserWarning, match="maxiter=1"):
+        gain, aux = localization_error(targets, estimations, 'gainP',
+                                       maxiter=1, auxiliary_output=True)
+    assert np.isnan(gain)
+    assert aux['converged_front']
+    assert not aux['converged_rear']
+
+
+def test_gainP_repetitions_dimension():
+    """Test gainP accepts estimations of shape (n_targets, repetitions)."""
+    rng = np.random.default_rng(1)
+    polar = np.arange(-60, 241, 15, dtype=float)
+    n_reps = 3
+    response = polar[:, None] + rng.normal(0, 5, (polar.size, n_reps))
+    targets = pf.Coordinates.from_spherical_side(
+        np.zeros(polar.size), np.deg2rad(polar), 1)
+    estimations = pf.Coordinates.from_spherical_side(
+        np.zeros(response.shape), np.deg2rad(response), 1)
+    assert estimations.cshape == (polar.size, n_reps)
+
+    flat_targets = pf.Coordinates.from_spherical_side(
+        np.zeros(response.size), np.deg2rad(np.repeat(polar, n_reps)), 1)
+    flat_estimations = pf.Coordinates.from_spherical_side(
+        np.zeros(response.size), np.deg2rad(response.ravel()), 1)
+
+    gain = localization_error(targets, estimations, 'gainP')
+    expected = localization_error(flat_targets, flat_estimations, 'gainP')
+    assert np.isfinite(gain)
+    assert np.isclose(gain, expected)
+
+
+def test_gainP_auxiliary_output_and_degrees():
+    """Test gainP auxiliary keys and that degrees=True leaves it unchanged."""
+    polar = np.arange(-60, 261, 10, dtype=float)
+    targets, estimations = _median_plane(polar, 0.5 * polar + 10)
+
+    gain, aux = localization_error(targets, estimations, 'gainP',
+                                   auxiliary_output=True)
+    expected_keys = set(get_metric_metadata('gainP')['auxiliary_output'])
+    assert set(aux) == expected_keys == {
+        'gain_front', 'gain_rear', 'bias_front', 'bias_rear',
+        'n_front', 'n_rear', 'converged_front', 'converged_rear',
+    }
+    assert get_metric_metadata('gainP')['output_unit'] == 'unitless'
+
+    gain_deg = localization_error(targets, estimations, 'gainP',
+                                  degrees=True)
+    assert gain_deg == gain
 
 
 def test_angular_error_perfect_estimation():

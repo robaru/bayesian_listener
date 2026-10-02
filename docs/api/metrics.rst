@@ -42,6 +42,8 @@ Polar error
 
 .. autofunction:: bayesian_listener.metrics.accP_cutoff
 
+.. autofunction:: bayesian_listener.metrics.gainP
+
 Global error
 ~~~~~~~~~~~~
 

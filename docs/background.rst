@@ -258,7 +258,9 @@ Further reading
 
 The standard localisation metrics implemented in
 :mod:`bayesian_listener.metrics` follow the definitions of
-:footcite:t:`middlebrooks1999`.  The gammatone filterbank used in
+:footcite:t:`middlebrooks1999`.  The polar gain (``gainP``) is computed with
+the selective iterative regression procedure described by
+:footcite:t:`macpherson2003`.  The gammatone filterbank used in
 :func:`~bayesian_listener.utils.compute_features` follows the ERB-rate
 scale of :footcite:t:`glasberg1990`.  The barycentric (VBAP) interpolation in
 :func:`~bayesian_listener.utils.vbap_interpolate` follows

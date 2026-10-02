@@ -36,14 +36,14 @@ estimations = listener.localise()
 print(estimations.spherical_elevation[..., 0:2])
 ```
 
-See [Getting Started](https://bayesian_listener.readthedocs.io/en/latest/getting_started.html) for more detailed examples.
+See [Getting Started](https://bayesian-listener.readthedocs.io/en/latest/getting_started.html) for more detailed examples.
 
 ## Documentation
 
-- **[Getting Started](https://bayesian_listener.readthedocs.io/)** — Installation and first example
-- **[Guides](https://bayesian_listener.readthedocs.io/en/latest/guides/)** — Task-oriented walkthroughs (fitting, simulation, HRTF comparison)
-- **[API Reference](https://bayesian_listener.readthedocs.io/en/latest/api/)** — Complete class and function documentation
-- **[Background](https://bayesian_listener.readthedocs.io/en/latest/background.html)** — Statistical framework and equations
+- **[Getting Started](https://bayesian-listener.readthedocs.io/)** — Installation and first example
+- **[Guides](https://bayesian-listener.readthedocs.io/en/latest/guides/)** — Task-oriented walkthroughs (fitting, simulation, HRTF comparison)
+- **[API Reference](https://bayesian-listener.readthedocs.io/en/latest/api/)** — Complete class and function documentation
+- **[Background](https://bayesian-listener.readthedocs.io/en/latest/background.html)** — Statistical framework and equations
 
 ## References
 
@@ -53,7 +53,7 @@ Acta Acustica, 7, 12. [Paper](https://doi.org/10.1051/aacus/2023006)
 
 Barumerli, R., Brinkmann, F., Zanoni, E., Hoyer, A., Picinali, L., & Geronazzo, M. (2026).
 *Statistical validation and full-sphere extension of a Bayesian model for human static sound localisation.*
-Acta Acustica (under review). [Pre-print](https://arxiv.org/abs/2606.24367)
+Acta Acustica, 10, 89. [Paper](https://doi.org/10.1051/aacus/2026084)
 
 ## License
 
@@ -68,7 +68,7 @@ EUPL 1.2 (European Union Public Licence)
 
 ## Acknowledgements
 
-The original model was implemented in MATLAB within the **Auditory Modeling Toolbox (AMT)**. This Python version incorporates code components from AMT (e.g., gammatone filtering). We are grateful to the AMT authors for sharing their work.
+The original model was implemented in MATLAB within the **[Auditory Modeling Toolbox (AMT)](https://amtoolbox.org/)**. This Python version incorporates code components from AMT (e.g., gammatone filtering). We are grateful to the AMT authors for sharing their work.
 
 The spherical t-design grids bundled with this package were originally published by Manuel Gräf and redistributed by [spaudiopy](https://github.com/chris-hold/spaudiopy).
 

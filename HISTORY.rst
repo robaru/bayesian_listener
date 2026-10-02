@@ -2,6 +2,37 @@
 History
 =======
 
+0.3.0 (2026-10-02)
+------------------
+
+Added
+^^^^^
+* ``gainP`` metric: polar gain as the mean of the front- and rear-hemifield
+  regression slopes, fitted with the selective iterative regression procedure
+  described by Macpherson and Middlebrooks (2003). The auxiliary output
+  reports each hemifield separately; non-convergence returns ``NaN`` with a
+  warning.
+* ``CLAUDE.md`` with project guidance for Claude Code.
+
+Changed
+^^^^^^^
+* Barumerli et al. (2026) is cited as published (Acta Acustica 10, 89)
+  instead of the preprint.
+* Documentation links point to ``bayesian-listener.readthedocs.io`` and
+  ``github.com/robaru/bayesian_listener``; the docs gained a GitHub badge and
+  footer icon, the README links AMT, and the copyright year is computed at
+  build time.
+
+Fixed
+^^^^^
+* The 0.2.0 wheel and sdist did not include
+  ``bayesian_listener/data/n_designs_1_124.mat``, so ``compute_template()``
+  failed with ``OSError`` on every non-editable install.
+
+Removed
+^^^^^^^
+* ``BayesianListener.coords``. Use ``BayesianListener.target.coords``.
+
 0.2.0 (2026-09-18)
 ------------------
 

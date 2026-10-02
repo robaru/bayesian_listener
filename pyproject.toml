@@ -86,6 +86,9 @@ build-backend = "setuptools.build_meta"
 [tool.setuptools.packages]
 find = {}  # Scan the project directory with the default parameters
 
+[tool.setuptools.package-data]
+bayesian_listener = ["data/n_designs_1_124.mat"]
+
 
 [tool.pytest.ini_options]
 addopts = "-m 'not guide'"
